@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" fill="none">
+  <defs>
+    <linearGradient id="vidora-logo-bg" x1="120" y1="120" x2="900" y2="900" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#6D5EF0" />
+      <stop offset="1" stop-color="#3B82F6" />
+    </linearGradient>
+  </defs>
+  <rect x="16" y="16" width="992" height="992" rx="220" fill="url(#vidora-logo-bg)" />
+  <path d="M338 289 L714 512 L338 735 Z" fill="#FFFFFF" />
+  <path
+    d="M796 154 L826 244 L916 274 L826 304 L796 394 L766 304 L676 274 L766 244 Z"
+    fill="#FBA83C"
+  />
+</svg>

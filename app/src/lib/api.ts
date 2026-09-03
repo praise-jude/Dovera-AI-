@@ -209,3 +209,27 @@ export async function listProviders(): Promise<ProviderInfo[]> {
 export async function getMe(): Promise<{ credits: number }> {
   return request("/auth/me");
 }
+
+export interface BillingStatus {
+  plan: "FREE" | "PREMIUM";
+  subscriptionStatus: "NONE" | "ACTIVE" | "PAST_DUE" | "CANCELLED";
+  planRenewsAt: string | null;
+  amountKobo: number;
+  currency: string;
+}
+
+export async function getBillingStatus(): Promise<BillingStatus> {
+  return request("/billing/status");
+}
+
+export async function subscribe(): Promise<{ authorizationUrl: string; reference: string }> {
+  return request("/billing/subscribe", { method: "POST" });
+}
+
+export async function verifyPayment(reference: string): Promise<{ status: string }> {
+  return request(`/billing/verify/${encodeURIComponent(reference)}`);
+}
+
+export async function cancelSubscription(): Promise<void> {
+  await request("/billing/cancel", { method: "POST" });
+}

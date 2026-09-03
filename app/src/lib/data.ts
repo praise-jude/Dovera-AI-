@@ -117,4 +117,5 @@ export const SCREEN_META: Record<string, { title: string; subtitle: string }> = 
   projects: { title: "My Projects", subtitle: "Autosaved · versioned" },
   slideshow: { title: "Photo Slideshow", subtitle: "Real generation — no simulation" },
   "music-library": { title: "My Music & Sounds", subtitle: "Your uploads, real storage" },
+  billing: { title: "Billing", subtitle: "Manage your subscription" },
 };

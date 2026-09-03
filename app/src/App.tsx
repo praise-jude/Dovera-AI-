@@ -18,6 +18,7 @@ import { CaptionsStudio } from "./screens/CaptionsStudio";
 import { Projects } from "./screens/Projects";
 import { Slideshow } from "./screens/Slideshow";
 import { MusicLibrary } from "./screens/MusicLibrary";
+import { Billing } from "./screens/Billing";
 import type { FC } from "react";
 import type { Screen } from "./lib/types";
 
@@ -39,6 +40,7 @@ const SCREEN_MAP: Record<Screen, FC> = {
   projects: Projects,
   slideshow: Slideshow,
   "music-library": MusicLibrary,
+  billing: Billing,
 };
 
 // screens where the header/tab chrome is suppressed for a focused, full-bleed moment
@@ -60,6 +62,7 @@ function Shell() {
             onBack={back}
             showBack={screen !== "home"}
             subtitleOverride={subtitleOverride}
+            onCreditsClick={() => go("billing")}
           />
         )}
         <main className={`app-main ${chromeless ? "app-main-full" : ""}`}>

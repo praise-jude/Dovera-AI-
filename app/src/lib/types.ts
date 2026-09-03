@@ -15,7 +15,8 @@ export type Screen =
   | "captions"
   | "projects"
   | "slideshow"
-  | "music-library";
+  | "music-library"
+  | "billing";
 
 export type Mode = "Text → Video" | "Image → Video" | "Director";
 

@@ -10,12 +10,14 @@ export function Header({
   onBack,
   showBack,
   subtitleOverride,
+  onCreditsClick,
 }: {
   screen: Screen;
   credits: string;
   onBack: () => void;
   showBack: boolean;
   subtitleOverride?: string;
+  onCreditsClick?: () => void;
 }) {
   const meta = SCREEN_META[screen];
   return (
@@ -27,14 +29,14 @@ export function Header({
               <IconBack />
             </button>
           ) : (
-            <div className="header-back-spacer" />
+            <img src="/logo.svg" alt="" className="header-logo" width={32} height={32} />
           )}
           <div className="header-titles">
             <div className="header-title">{meta.title}</div>
             <div className="header-subtitle">{subtitleOverride ?? meta.subtitle}</div>
           </div>
         </div>
-        <CreditPill credits={credits} />
+        <CreditPill credits={credits} onClick={onCreditsClick} />
       </div>
     </header>
   );

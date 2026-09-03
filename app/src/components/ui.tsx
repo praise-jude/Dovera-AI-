@@ -96,11 +96,11 @@ export function ScoreRing({ score }: { score: number }) {
   );
 }
 
-export function CreditPill({ credits }: { credits: string }) {
+export function CreditPill({ credits, onClick }: { credits: string; onClick?: () => void }) {
   return (
-    <div className="credit-pill">
+    <button className="credit-pill" onClick={onClick} aria-label="Billing and subscription">
       <span className="credit-dot" />
       <span className="mono">{credits}</span>
-    </div>
+    </button>
   );
 }
