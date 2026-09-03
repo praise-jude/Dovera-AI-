@@ -1,0 +1,124 @@
+:root {
+  color-scheme: dark;
+
+  /* Color */
+  --bg: #0A0B0D;
+  --surface: #14161A;
+  --surface-raise: rgba(255, 255, 255, .04);
+  --surface-raise-hover: rgba(255, 255, 255, .10);
+  --border: rgba(255, 255, 255, .08);
+  --border-strong: rgba(255, 255, 255, .12);
+  --divider: rgba(255, 255, 255, .06);
+  --divider-inner: rgba(255, 255, 255, .048);
+  --text: #F2F4F5;
+  --text-muted: rgba(242, 244, 245, .45);
+  --text-dim: rgba(242, 244, 245, .35);
+  --accent: #00D5A0;
+  --accent-hover: #4EE8BE;
+  --on-accent: #04120E;
+  --accent-tint: rgba(0, 213, 160, .10);
+  --accent-tint-soft: rgba(0, 213, 160, .08);
+  --accent-line: rgba(0, 213, 160, .38);
+  --warn: #F5C042;
+  --danger: #FF6B5B;
+
+  /* Type */
+  --font: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, Menlo, "SFMono-Regular", monospace;
+
+  /* Spacing / radius scale — fluid across breakpoints via clamp() */
+  --pad-screen: clamp(14px, 3.2vw, 20px);
+  --gap-card: clamp(9px, 2vw, 12px);
+  --gap-chip: 7px;
+  --gap-grid: clamp(9px, 2vw, 12px);
+
+  --r-pill: 999px;
+  --r-sm: 11px;
+  --r-md: clamp(14px, 2.2vw, 16px);
+  --r-lg: 18px;
+  --r-sheet: 24px;
+
+  --h-header: 60px;
+  --h-tabbar: 78px;
+  --h-cta: clamp(46px, 3vw + 40px, 48px);
+  --h-cta-secondary: 40px;
+  --h-chip: 32px;
+  --h-row-btn: 36px;
+
+  --content-max: 720px;
+
+  --ease: cubic-bezier(.2, .7, .3, 1);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  :root { --motion-ok: 1; }
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  overscroll-behavior-y: none;
+}
+
+#root {
+  min-height: 100dvh;
+}
+
+button, input, textarea {
+  font-family: inherit;
+  color: inherit;
+}
+
+button {
+  cursor: pointer;
+  background: none;
+  border: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+a { color: inherit; }
+
+.mono { font-family: var(--font-mono); }
+
+::selection {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+/* Fluid keyframes */
+@keyframes vup {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+@keyframes sheet-in {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+@keyframes scrim-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.vup {
+  animation: vup .3s var(--ease) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vup, .spinner, .progress-fill, .sheet-panel, .scrim {
+    animation: none !important;
+    transition: none !important;
+  }
+}
