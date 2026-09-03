@@ -13,7 +13,9 @@ export type Screen =
   | "formats"
   | "voice"
   | "captions"
-  | "projects";
+  | "projects"
+  | "slideshow"
+  | "music-library";
 
 export type Mode = "Text → Video" | "Image → Video" | "Director";
 
@@ -42,4 +44,9 @@ export interface ViewState {
   prog: number;
   credits: string;
   activeSceneId: number;
+  realJobId: string | null;
+  realPending: boolean;
+  realStatusMessage: string | null;
+  realResultUrl: string | null;
+  realError: string | null;
 }

@@ -15,23 +15,39 @@ const REMIX = [
 ];
 
 export function Result() {
-  const { go, openSheet } = useStore();
+  const { go, openSheet, realResultUrl } = useStore();
 
   return (
     <div className="screen result-screen vup">
       <div className="player">
-        <Placeholder className="player-bg" />
-        <button className="player-play" aria-label="Play">
-          <IconPlay width={22} height={22} />
-        </button>
-        <span className="mono player-caption">final cut · 9:16 · 24s</span>
+        {realResultUrl ? (
+          <video className="player-bg" src={realResultUrl} controls playsInline />
+        ) : (
+          <>
+            <Placeholder className="player-bg" />
+            <button className="player-play" aria-label="Play">
+              <IconPlay width={22} height={22} />
+            </button>
+            <span className="mono player-caption">final cut · 9:16 · 24s</span>
+          </>
+        )}
       </div>
 
-      <div className="result-header">
-        <div className="result-title">Aurora Skincare — Luxury</div>
-        <div className="result-meta">v3 · 4 scenes · 41 credits used</div>
-        <button className="link-btn" onClick={() => go("projects")}>History</button>
-      </div>
+      {realResultUrl ? (
+        <div className="result-header">
+          <div className="real-badge" style={{ marginBottom: 8 }}>
+            <span className="real-badge-dot" /> Real render, generated just now
+          </div>
+          <div className="result-title">Your slideshow</div>
+          <div className="result-meta">Rendered server-side from your uploaded photos</div>
+        </div>
+      ) : (
+        <div className="result-header">
+          <div className="result-title">Aurora Skincare — Luxury</div>
+          <div className="result-meta">v3 · 4 scenes · 41 credits used</div>
+          <button className="link-btn" onClick={() => go("projects")}>History</button>
+        </div>
+      )}
 
       <div className="section-label">Finish</div>
       <div className="finish-grid">
@@ -51,9 +67,16 @@ export function Result() {
       </div>
 
       <button className="continue-cta" onClick={openSheet}>Continue this video →</button>
-      <p className="disclaimer-note">
-        Extension continues motion and style where the provider supports it — continuity isn't guaranteed.
-      </p>
+      {realResultUrl ? (
+        <p className="disclaimer-note">
+          Finish, Remix and Continue below are part of the interactive design preview and aren't
+          wired to real generation yet — only the video above is a real render.
+        </p>
+      ) : (
+        <p className="disclaimer-note">
+          Extension continues motion and style where the provider supports it — continuity isn't guaranteed.
+        </p>
+      )}
     </div>
   );
 }

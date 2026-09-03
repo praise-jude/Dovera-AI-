@@ -74,6 +74,19 @@ export function Home() {
         ))}
       </div>
 
+      <div className="real-cta-row">
+        <button className="real-cta" onClick={() => go("slideshow")}>
+          <div className="real-badge"><span className="real-badge-dot" /> Real generation</div>
+          <div className="real-cta-title">Photo Slideshow</div>
+          <div className="real-cta-meta">Upload photos — get back an actual rendered video.</div>
+        </button>
+        <button className="real-cta" onClick={() => go("music-library")}>
+          <div className="real-badge"><span className="real-badge-dot" /> Real storage</div>
+          <div className="real-cta-title">🎵 My Music &amp; Sounds</div>
+          <div className="real-cta-meta">Upload and manage your own music and sound effects.</div>
+        </button>
+      </div>
+
       <SectionLabel>Studios</SectionLabel>
       <div className="studio-grid">
         {STUDIOS.map((s) => {

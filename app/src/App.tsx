@@ -16,6 +16,8 @@ import { Formats } from "./screens/Formats";
 import { VoiceStudio } from "./screens/VoiceStudio";
 import { CaptionsStudio } from "./screens/CaptionsStudio";
 import { Projects } from "./screens/Projects";
+import { Slideshow } from "./screens/Slideshow";
+import { MusicLibrary } from "./screens/MusicLibrary";
 import type { FC } from "react";
 import type { Screen } from "./lib/types";
 
@@ -35,21 +37,30 @@ const SCREEN_MAP: Record<Screen, FC> = {
   voice: VoiceStudio,
   captions: CaptionsStudio,
   projects: Projects,
+  slideshow: Slideshow,
+  "music-library": MusicLibrary,
 };
 
 // screens where the header/tab chrome is suppressed for a focused, full-bleed moment
 const CHROMELESS: Screen[] = ["generating"];
 
 function Shell() {
-  const { screen, credits, back, go } = useStore();
+  const { screen, credits, back, go, realResultUrl } = useStore();
   const ScreenComponent = SCREEN_MAP[screen];
   const chromeless = CHROMELESS.includes(screen);
+  const subtitleOverride = screen === "result" && realResultUrl ? "Your slideshow · real render" : undefined;
 
   return (
     <div className="app-root">
       <div className="app-frame">
         {!chromeless && (
-          <Header screen={screen} credits={credits} onBack={back} showBack={screen !== "home"} />
+          <Header
+            screen={screen}
+            credits={credits}
+            onBack={back}
+            showBack={screen !== "home"}
+            subtitleOverride={subtitleOverride}
+          />
         )}
         <main className={`app-main ${chromeless ? "app-main-full" : ""}`}>
           <ScreenComponent key={screen} />

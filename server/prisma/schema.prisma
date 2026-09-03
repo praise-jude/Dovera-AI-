@@ -28,6 +28,14 @@ enum AssetKind {
   VIDEO
 }
 
+enum AssetCategory {
+  MUSIC
+  SFX
+  VOICE
+  AMBIENCE
+  OTHER
+}
+
 enum JobType {
   SLIDESHOW_VIDEO
   TEXT_TO_VIDEO
@@ -86,16 +94,18 @@ model Project {
 }
 
 model Asset {
-  id          String    @id @default(cuid())
+  id          String        @id @default(cuid())
   userId      String
   projectId   String?
   kind        AssetKind
+  category    AssetCategory @default(OTHER)
+  favorite    Boolean       @default(false)
   filename    String
   storagePath String
   mimeType    String
   sizeBytes   Int
   durationSec Float?
-  createdAt   DateTime  @default(now())
+  createdAt   DateTime      @default(now())
 
   user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   project Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)

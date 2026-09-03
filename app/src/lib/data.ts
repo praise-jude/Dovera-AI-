@@ -115,4 +115,6 @@ export const SCREEN_META: Record<string, { title: string; subtitle: string }> = 
   voice: { title: "Voice Studio", subtitle: "Preview before you commit" },
   captions: { title: "Captions Studio", subtitle: "Auto transcript · editable" },
   projects: { title: "My Projects", subtitle: "Autosaved · versioned" },
+  slideshow: { title: "Photo Slideshow", subtitle: "Real generation — no simulation" },
+  "music-library": { title: "My Music & Sounds", subtitle: "Your uploads, real storage" },
 };

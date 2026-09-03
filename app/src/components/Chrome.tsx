@@ -9,11 +9,13 @@ export function Header({
   credits,
   onBack,
   showBack,
+  subtitleOverride,
 }: {
   screen: Screen;
   credits: string;
   onBack: () => void;
   showBack: boolean;
+  subtitleOverride?: string;
 }) {
   const meta = SCREEN_META[screen];
   return (
@@ -29,7 +31,7 @@ export function Header({
           )}
           <div className="header-titles">
             <div className="header-title">{meta.title}</div>
-            <div className="header-subtitle">{meta.subtitle}</div>
+            <div className="header-subtitle">{subtitleOverride ?? meta.subtitle}</div>
           </div>
         </div>
         <CreditPill credits={credits} />
