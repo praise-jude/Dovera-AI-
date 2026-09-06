@@ -12,6 +12,9 @@ dist
 dist-ssr
 *.local
 
+# Built APK artifacts — hosted for download but regenerated per build, not source
+public/*.apk
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
