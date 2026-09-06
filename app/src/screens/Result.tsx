@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useStore } from "../lib/store";
 import { Chip, Placeholder } from "../components/ui";
 import { IconPlay } from "../components/icons";
@@ -22,12 +23,30 @@ const EXPORT_FORMATS: { id: "9:16" | "16:9" | "1:1"; label: string }[] = [
 
 export function Result() {
   const { go, openSheet, realResultUrl, realProjectId, exportInFormat } = useStore();
+  const [playbackError, setPlaybackError] = useState<string | null>(null);
 
   return (
     <div className="screen result-screen vup">
       <div className="player">
         {realResultUrl ? (
-          <video className="player-bg" src={realResultUrl} controls playsInline />
+          <>
+            <video
+              className="player-bg"
+              src={realResultUrl}
+              controls
+              playsInline
+              onError={() =>
+                setPlaybackError(
+                  "This device couldn't play the video preview. Try Download below, or open it in another app/browser."
+                )
+              }
+            />
+            {playbackError && (
+              <p className="disclaimer-note" style={{ color: "var(--warn)", margin: "8px 2px 0" }}>
+                {playbackError}
+              </p>
+            )}
+          </>
         ) : (
           <>
             <Placeholder className="player-bg" />

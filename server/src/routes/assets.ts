@@ -163,6 +163,28 @@ assetsRouter.get("/:id/file", async (req: AuthedRequest, res) => {
   try {
     const s = await stat(path);
     res.setHeader("Content-Type", asset.mimeType);
+    res.setHeader("Accept-Ranges", "bytes");
+
+    // Range support is required, not optional, for <video>/<audio> playback
+    // in most mobile browsers (always on iOS Safari, frequently on Android
+    // WebView too) — without it some players refuse to play at all rather
+    // than falling back to a full download.
+    const range = req.headers.range;
+    if (range) {
+      const match = /^bytes=(\d*)-(\d*)$/.exec(range);
+      const start = match?.[1] ? parseInt(match[1], 10) : 0;
+      const end = match?.[2] ? parseInt(match[2], 10) : s.size - 1;
+      if (Number.isNaN(start) || Number.isNaN(end) || start > end || end >= s.size) {
+        res.status(416).setHeader("Content-Range", `bytes */${s.size}`).end();
+        return;
+      }
+      res.status(206);
+      res.setHeader("Content-Range", `bytes ${start}-${end}/${s.size}`);
+      res.setHeader("Content-Length", String(end - start + 1));
+      createReadStream(path, { start, end }).pipe(res);
+      return;
+    }
+
     res.setHeader("Content-Length", String(s.size));
     createReadStream(path).pipe(res);
   } catch {

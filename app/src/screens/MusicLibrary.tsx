@@ -34,7 +34,6 @@ export function MusicLibrary() {
   const [renameValue, setRenameValue] = useState("");
   const [error, setError] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
-  const blobCache = useRef<Map<string, string>>(new Map());
   const musicInputRef = useRef<HTMLInputElement>(null);
   const soundInputRef = useRef<HTMLInputElement>(null);
 
@@ -73,11 +72,7 @@ export function MusicLibrary() {
       setPlayingId(null);
       return;
     }
-    let url = blobCache.current.get(asset.id);
-    if (!url) {
-      url = await api.fetchAssetBlobUrl(asset.id);
-      blobCache.current.set(asset.id, url);
-    }
+    const url = api.getAssetFileUrl(asset.id);
     if (audioRef.current) {
       audioRef.current.src = url;
       await audioRef.current.play();

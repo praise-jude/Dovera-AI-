@@ -151,7 +151,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       if (!completedJob?.resultAssetId) {
         throw new Error("NO_RESULT");
       }
-      const url = await api.fetchAssetBlobUrl(completedJob.resultAssetId);
+      const url = api.getAssetFileUrl(completedJob.resultAssetId);
       setState((s) => ({ ...s, realResultUrl: url }));
     } catch {
       setState((s) => ({ ...s, screen: "projects", realError: null }));
@@ -309,7 +309,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         const job = await api.getJob(jobId);
         if (cancelled) return;
         if (job.status === "COMPLETED" && job.resultAssetId) {
-          const url = await api.fetchAssetBlobUrl(job.resultAssetId);
+          const url = api.getAssetFileUrl(job.resultAssetId);
           if (cancelled) return;
           const me = await api.getMe().catch(() => null);
           setState((s) => ({

@@ -1,0 +1,13 @@
+# Railway rebuilds node_modules/dist itself during its own build step, and
+# the Android native project is irrelevant to the deployed web service — none
+# of this needs to travel in the upload. This file (not .gitignore) is what
+# Railway CLI actually reads, so public/vidora-ai.apk — gitignored so it never
+# gets committed as source, but still needed in the deploy — is NOT excluded
+# here and rides along normally (no --no-gitignore flag needed anymore).
+node_modules
+dist
+dist-ssr
+android
+scratch_fixtures
+.git
+*.log

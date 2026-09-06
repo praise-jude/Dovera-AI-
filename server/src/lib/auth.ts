@@ -16,7 +16,12 @@ export function signToken(userId: string): string {
 
 export function requireAuth(req: AuthedRequest, res: Response, next: NextFunction) {
   const header = req.headers.authorization;
-  const token = header?.startsWith("Bearer ") ? header.slice(7) : null;
+  // Media elements (<video>/<img> src) can't send an Authorization header,
+  // so a GET-only query-param fallback lets asset URLs be used directly —
+  // still just the same bearer JWT, still scoped to its owning user by every
+  // route that looks up an asset via req.userId.
+  const queryToken = req.method === "GET" && typeof req.query.token === "string" ? req.query.token : null;
+  const token = (header?.startsWith("Bearer ") ? header.slice(7) : null) ?? queryToken;
   if (!token) {
     res.status(401).json({ error: "Sign in required." });
     return;

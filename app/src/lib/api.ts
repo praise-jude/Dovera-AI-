@@ -237,14 +237,17 @@ export async function getJob(jobId: string): Promise<JobRecord> {
   return job;
 }
 
-export async function fetchAssetBlobUrl(assetId: string): Promise<string> {
+// A direct, streamable URL for a <video>/<audio>/<img> element to point at.
+// Deliberately NOT a fetch-then-blob: a blob forces the whole file into
+// memory before anything can play and defeats HTTP range requests, which
+// most mobile video players (always iOS Safari, often Android WebView)
+// require in order to play at all — this stays a normal progressive stream.
+// The token has to travel as a query param since media elements can't send
+// an Authorization header; the server only accepts it on this GET route.
+export function getAssetFileUrl(assetId: string): string {
   const token = getToken();
-  const res = await fetch(`${API_BASE}/assets/${assetId}/file`, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-  });
-  if (!res.ok) throw new ApiError("Couldn't load the generated video.", res.status);
-  const blob = await res.blob();
-  return URL.createObjectURL(blob);
+  const qs = token ? `?token=${encodeURIComponent(token)}` : "";
+  return `${API_BASE}/assets/${assetId}/file${qs}`;
 }
 
 export interface ProviderInfo {

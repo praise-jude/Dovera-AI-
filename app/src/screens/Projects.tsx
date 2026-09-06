@@ -63,10 +63,7 @@ export function Projects() {
       const thumbId = p.latestJob?.thumbnailAssetId;
       if (thumbId && !fetchedThumbIds.current.has(thumbId)) {
         fetchedThumbIds.current.add(thumbId);
-        api
-          .fetchAssetBlobUrl(thumbId)
-          .then((url) => setThumbs((t) => ({ ...t, [p.id]: url })))
-          .catch(() => {});
+        setThumbs((t) => ({ ...t, [p.id]: api.getAssetFileUrl(thumbId) }));
       }
     }
   }, [projects]);
