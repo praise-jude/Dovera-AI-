@@ -4,6 +4,8 @@ import { Button, Chip } from "../components/ui";
 import { IconClose } from "../components/icons";
 import * as api from "../lib/api";
 import type { SlideshowStyle, UploadedAsset } from "../lib/api";
+import { detectBeats, beatAlignedDurations, type BeatInfo } from "../lib/beatDetect";
+import { deriveFromPrompt } from "../lib/promptDefaults";
 
 const ASPECTS: { id: "9:16" | "16:9" | "1:1"; label: string }[] = [
   { id: "9:16", label: "9:16 Vertical" },
@@ -22,11 +24,22 @@ const DEFAULT_DURATION = 3;
 const MIN_DURATION = 1;
 const MAX_DURATION = 10;
 
+type TimingMode = "manual" | "sync" | "beat";
+
 function formatDuration(sec: number | null): string {
   if (sec == null) return "";
   const m = Math.floor(sec / 60);
   const s = Math.round(sec % 60);
   return `${m}:${String(s).padStart(2, "0")}`;
+}
+
+function shuffle<T>(arr: T[]): T[] {
+  const next = [...arr];
+  for (let i = next.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [next[i], next[j]] = [next[j], next[i]];
+  }
+  return next;
 }
 
 interface AddedSfx {
@@ -37,13 +50,19 @@ interface AddedSfx {
 
 export function Slideshow() {
   const { startRealSlideshow } = useStore();
+  const [idea, setIdea] = useState("");
+  const [ideaApplied, setIdeaApplied] = useState(false);
+
   const [images, setImages] = useState<File[]>([]);
   const [durations, setDurations] = useState<number[]>([]);
   const [music, setMusic] = useState<File | null>(null);
   const [uploadedMusicDuration, setUploadedMusicDuration] = useState<number | null>(null);
   const [libraryMusic, setLibraryMusic] = useState<UploadedAsset[]>([]);
   const [pickedMusicId, setPickedMusicId] = useState<string | null>(null);
-  const [syncToMusic, setSyncToMusic] = useState(false);
+  const [timingMode, setTimingMode] = useState<TimingMode>("manual");
+  const [beatInfo, setBeatInfo] = useState<BeatInfo | null>(null);
+  const [beatDetecting, setBeatDetecting] = useState(false);
+  const [beatError, setBeatError] = useState<string | null>(null);
   const [musicVolume, setMusicVolume] = useState(0.9);
   const [librarySfx, setLibrarySfx] = useState<UploadedAsset[]>([]);
   const [sfxPickId, setSfxPickId] = useState<string | null>(null);
@@ -88,11 +107,37 @@ export function Slideshow() {
     };
   }, [music]);
 
+  // Beat info is tied to a specific track — clear it whenever the selected
+  // music changes so a stale detection never gets applied to a new song.
+  useEffect(() => {
+    setBeatInfo(null);
+    setBeatError(null);
+    if (timingMode === "beat") setTimingMode("sync");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [music, pickedMusicId]);
+
   const musicDurationSec = pickedMusicId
     ? libraryMusic.find((m) => m.id === pickedMusicId)?.durationSec ?? null
     : uploadedMusicDuration;
 
   const canSync = Boolean(musicDurationSec) && images.length > 0;
+  const suggestedPhotoCount = musicDurationSec ? Math.max(1, Math.round(musicDurationSec / DEFAULT_DURATION)) : null;
+
+  const runBeatDetection = async () => {
+    const file = music;
+    if (!file) return;
+    setBeatDetecting(true);
+    setBeatError(null);
+    const info = await detectBeats(file);
+    setBeatDetecting(false);
+    if (!info) {
+      setBeatError("Couldn't find a clear beat in this track — using even timing instead.");
+      setTimingMode("sync");
+      return;
+    }
+    setBeatInfo(info);
+    setTimingMode("beat");
+  };
 
   const addImages = (files: File[]) => {
     setImages((imgs) => [...imgs, ...files].slice(0, 12));
@@ -123,10 +168,32 @@ export function Slideshow() {
     setDurations((d) => d.map((v, idx) => (idx === i ? Math.max(MIN_DURATION, Math.min(MAX_DURATION, v + delta)) : v)));
   };
 
+  const surpriseMe = () => {
+    if (images.length === 0) return;
+    const order = shuffle(images.map((_, i) => i));
+    setImages((imgs) => order.map((i) => imgs[i]));
+    setDurations((d) => order.map((i) => d[i] ?? DEFAULT_DURATION));
+    setStyle(STYLES[Math.floor(Math.random() * STYLES.length)].id);
+    setTimingMode("manual");
+  };
+
+  const applyIdea = () => {
+    if (!idea.trim()) return;
+    const derived = deriveFromPrompt(idea);
+    setStyle(derived.style);
+    setTitleText(derived.title);
+    if (timingMode === "manual") {
+      setDurations((d) => d.map(() => derived.secondsPerImage));
+    }
+    setIdeaApplied(true);
+  };
+
   const effectiveDurations =
-    syncToMusic && musicDurationSec && images.length > 0
+    timingMode === "sync" && musicDurationSec && images.length > 0
       ? images.map(() => Math.max(MIN_DURATION, Math.min(MAX_DURATION, musicDurationSec / images.length)))
-      : durations;
+      : timingMode === "beat" && beatInfo && images.length > 0
+        ? beatAlignedDurations(images.length, beatInfo, musicDurationSec ?? durations.reduce((a, b) => a + b, 0), MIN_DURATION, MAX_DURATION)
+        : durations;
 
   const totalDuration = effectiveDurations.reduce((a, b) => a + b, 0);
   const canGenerate = images.length > 0;
@@ -142,6 +209,24 @@ export function Slideshow() {
         video — no placeholder, no simulation.
       </p>
 
+      <div className="section-label" style={{ marginTop: 0 }}>Idea (optional)</div>
+      <input
+        className="text-input"
+        placeholder="e.g. romantic wedding highlight, energetic travel reel…"
+        value={idea}
+        onChange={(e) => {
+          setIdea(e.target.value.slice(0, 120));
+          setIdeaApplied(false);
+        }}
+        style={{ marginBottom: 8 }}
+      />
+      <Button variant="secondary" full disabled={!idea.trim()} onClick={applyIdea} style={{ marginBottom: 6 }}>
+        {ideaApplied ? "Applied ✓" : "Apply to style, pacing & title"}
+      </Button>
+      <p className="disclaimer-note" style={{ margin: "0 2px 16px" }}>
+        Smart defaults from keywords in what you type — not an AI that understands your photos.
+      </p>
+
       <input
         className="text-input"
         placeholder="Project name (optional)"
@@ -150,58 +235,7 @@ export function Slideshow() {
         style={{ marginBottom: 16 }}
       />
 
-      <div className="section-label" style={{ marginTop: 0 }}>
-        Photos {images.length > 0 && <span className="mono">· {totalDuration.toFixed(1)}s total</span>}
-      </div>
-
-      {images.length > 0 && (
-        <div className="slideshow-photo-list">
-          {images.map((file, i) => (
-            <div key={i} className="slideshow-photo-row">
-              <img className="slideshow-photo-row-thumb" src={URL.createObjectURL(file)} alt={`Photo ${i + 1}`} />
-              <div className="slideshow-photo-row-info">
-                <span className="mono slideshow-photo-row-num">{String(i + 1).padStart(2, "0")}</span>
-                {!syncToMusic ? (
-                  <div className="slideshow-duration-stepper">
-                    <button aria-label="Shorter" onClick={() => adjustDuration(i, -0.5)}>−</button>
-                    <span className="mono">{effectiveDurations[i]?.toFixed(1)}s</span>
-                    <button aria-label="Longer" onClick={() => adjustDuration(i, 0.5)}>+</button>
-                  </div>
-                ) : (
-                  <span className="mono slideshow-synced-duration">{effectiveDurations[i]?.toFixed(1)}s · synced</span>
-                )}
-              </div>
-              <div className="slideshow-photo-row-actions">
-                <button disabled={i === 0} onClick={() => moveImage(i, -1)} aria-label={`Move photo ${i + 1} up`}>▲</button>
-                <button disabled={i === images.length - 1} onClick={() => moveImage(i, 1)} aria-label={`Move photo ${i + 1} down`}>▼</button>
-                <button onClick={() => removeImage(i)} aria-label={`Remove photo ${i + 1}`}>
-                  <IconClose width={13} height={13} />
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {images.length < 12 && (
-        <button className="add-scene-btn" style={{ marginTop: images.length > 0 ? 10 : 0 }} onClick={() => imgInputRef.current?.click()}>
-          + Add photos
-        </button>
-      )}
-      <input
-        ref={imgInputRef}
-        type="file"
-        accept="image/jpeg,image/png,image/webp"
-        multiple
-        hidden
-        onChange={(e) => {
-          const files = Array.from(e.target.files ?? []);
-          e.target.value = "";
-          addImages(files);
-        }}
-      />
-
-      <div className="section-label">Music (optional)</div>
+      <div className="section-label" style={{ marginTop: 0 }}>Music (optional — start here if you'd like)</div>
 
       {libraryMusic.length > 0 && (
         <>
@@ -255,26 +289,42 @@ export function Slideshow() {
         }}
       />
 
-      {(music || pickedMusicId) && (
-        <button
-          className={`sync-toggle-row ${syncToMusic ? "sync-toggle-row-active" : ""}`}
-          onClick={() => setSyncToMusic((v) => !v)}
-          disabled={!canSync}
-        >
-          <span className={`sync-toggle-box ${syncToMusic ? "sync-toggle-box-active" : ""}`}>{syncToMusic ? "✓" : ""}</span>
-          <span>
-            Sync photos to music
-            {musicDurationSec != null && (
-              <span className="disclaimer-note" style={{ display: "block", marginTop: 2 }}>
-                Splits {formatDuration(musicDurationSec)} evenly across {images.length || "your"} photo{images.length === 1 ? "" : "s"}
-              </span>
-            )}
-          </span>
-        </button>
+      {musicDurationSec != null && images.length === 0 && (
+        <p className="disclaimer-note" style={{ margin: "10px 2px 0" }}>
+          {formatDuration(musicDurationSec)} track — try around {suggestedPhotoCount} photo
+          {suggestedPhotoCount === 1 ? "" : "s"} for a good pace (about {DEFAULT_DURATION}s each).
+        </p>
       )}
 
       {(music || pickedMusicId) && (
         <>
+          <div className="section-label">Photo timing</div>
+          <div className="style-chip-row">
+            <Chip selected={timingMode === "manual"} onClick={() => setTimingMode("manual")}>Manual</Chip>
+            <Chip selected={timingMode === "sync"} onClick={() => setTimingMode("sync")} disabled={!canSync}>
+              Even split
+            </Chip>
+            <Chip
+              selected={timingMode === "beat"}
+              onClick={() => (beatInfo ? setTimingMode("beat") : runBeatDetection())}
+              disabled={!canSync || beatDetecting}
+            >
+              {beatDetecting ? "Detecting…" : "On the beat"}
+            </Chip>
+          </div>
+          {timingMode === "sync" && musicDurationSec != null && (
+            <p className="disclaimer-note" style={{ margin: "8px 2px 0" }}>
+              Splits {formatDuration(musicDurationSec)} evenly across {images.length || "your"} photo
+              {images.length === 1 ? "" : "s"}.
+            </p>
+          )}
+          {timingMode === "beat" && beatInfo && (
+            <p className="disclaimer-note" style={{ margin: "8px 2px 0" }}>
+              Detected ~{beatInfo.bpm} BPM ({beatInfo.beatCount} beats found) — cuts land on the beat.
+            </p>
+          )}
+          {beatError && <p className="disclaimer-note" style={{ color: "var(--warn)", margin: "8px 2px 0" }}>{beatError}</p>}
+
           <div className="section-label">Music volume</div>
           <div className="voice-slider-row" style={{ marginBottom: 4 }}>
             <input
@@ -351,6 +401,65 @@ export function Slideshow() {
             </div>
           )}
         </>
+      )}
+
+      <div className="section-label">
+        Photos {images.length > 0 && <span className="mono">· {totalDuration.toFixed(1)}s total</span>}
+      </div>
+
+      {images.length > 0 && (
+        <div className="slideshow-photo-list">
+          {images.map((file, i) => (
+            <div key={i} className="slideshow-photo-row">
+              <img className="slideshow-photo-row-thumb" src={URL.createObjectURL(file)} alt={`Photo ${i + 1}`} />
+              <div className="slideshow-photo-row-info">
+                <span className="mono slideshow-photo-row-num">{String(i + 1).padStart(2, "0")}</span>
+                {timingMode === "manual" ? (
+                  <div className="slideshow-duration-stepper">
+                    <button aria-label="Shorter" onClick={() => adjustDuration(i, -0.5)}>−</button>
+                    <span className="mono">{effectiveDurations[i]?.toFixed(1)}s</span>
+                    <button aria-label="Longer" onClick={() => adjustDuration(i, 0.5)}>+</button>
+                  </div>
+                ) : (
+                  <span className="mono slideshow-synced-duration">
+                    {effectiveDurations[i]?.toFixed(1)}s · {timingMode === "beat" ? "on the beat" : "synced"}
+                  </span>
+                )}
+              </div>
+              <div className="slideshow-photo-row-actions">
+                <button disabled={i === 0} onClick={() => moveImage(i, -1)} aria-label={`Move photo ${i + 1} up`}>▲</button>
+                <button disabled={i === images.length - 1} onClick={() => moveImage(i, 1)} aria-label={`Move photo ${i + 1} down`}>▼</button>
+                <button onClick={() => removeImage(i)} aria-label={`Remove photo ${i + 1}`}>
+                  <IconClose width={13} height={13} />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {images.length < 12 && (
+        <button className="add-scene-btn" style={{ marginTop: images.length > 0 ? 10 : 0 }} onClick={() => imgInputRef.current?.click()}>
+          + Add photos
+        </button>
+      )}
+      <input
+        ref={imgInputRef}
+        type="file"
+        accept="image/jpeg,image/png,image/webp"
+        multiple
+        hidden
+        onChange={(e) => {
+          const files = Array.from(e.target.files ?? []);
+          e.target.value = "";
+          addImages(files);
+        }}
+      />
+
+      {images.length > 1 && (
+        <Button variant="secondary" full onClick={surpriseMe} style={{ marginTop: 10 }}>
+          🎲 Surprise me — shuffle order &amp; style
+        </Button>
       )}
 
       <div className="section-label">Style</div>
