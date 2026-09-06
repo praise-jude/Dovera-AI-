@@ -16,7 +16,9 @@ const createSchema = z.object({
     imageAssetIds: z.array(z.string()).min(1).max(12),
     musicAssetId: z.string().optional(),
     secondsPerImage: z.number().min(1.5).max(8).optional(),
+    durations: z.array(z.number().min(1).max(12)).max(12).optional(),
     aspectRatio: z.enum(["9:16", "16:9", "1:1"]).optional(),
+    style: z.enum(["kenburns", "cinematic", "vibrant", "classic"]).optional(),
     captions: z
       .array(z.object({ text: z.string().max(200), atSec: z.number().min(0), durationSec: z.number().min(0.5) }))
       .max(20)

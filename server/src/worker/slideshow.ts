@@ -31,11 +31,15 @@ const ASPECT_SIZE: Record<string, { w: number; h: number }> = {
 const FPS = 30;
 const MAX_IMAGES = 12;
 
+export type SlideshowStyle = "kenburns" | "cinematic" | "vibrant" | "classic";
+
 export interface SlideshowParams {
   imageAssetIds: string[];
   musicAssetId?: string;
   secondsPerImage?: number;
+  durations?: number[];
   aspectRatio?: "9:16" | "16:9" | "1:1";
+  style?: SlideshowStyle;
   captions?: { text: string; atSec: number; durationSec: number }[];
 }
 
@@ -52,6 +56,32 @@ function escapeFilterPath(path: string): string {
 }
 
 const ESCAPED_FONT_PATH = escapeFilterPath(FONT_PATH);
+
+// Each style is a genuinely different filter chain (motion + color), not a
+// label with no effect behind it — rule: never ship a control that does
+// nothing. "classic" skips zoompan entirely (static frame, hard cut) rather
+// than faking stillness with a near-zero zoom rate.
+function styleFilterChain(style: SlideshowStyle, w: number, h: number, frames: number, clipDur: number): string {
+  const base = `scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h},setsar=1`;
+  const tail = `trim=duration=${clipDur.toFixed(3)},setpts=PTS-STARTPTS`;
+  switch (style) {
+    case "classic":
+      return `${base},fps=${FPS},${tail}`;
+    case "cinematic":
+      return (
+        `${base},zoompan=z='min(zoom+0.0008,1.08)':d=${frames}:s=${w}x${h}:fps=${FPS},` +
+        `eq=saturation=0.85:contrast=1.05,vignette=PI/5,${tail}`
+      );
+    case "vibrant":
+      return (
+        `${base},zoompan=z='min(zoom+0.0022,1.25)':d=${frames}:s=${w}x${h}:fps=${FPS},` +
+        `eq=saturation=1.35:contrast=1.08,${tail}`
+      );
+    case "kenburns":
+    default:
+      return `${base},zoompan=z='min(zoom+0.0012,1.15)':d=${frames}:s=${w}x${h}:fps=${FPS},${tail}`;
+  }
+}
 
 export async function runSlideshowJob(jobId: string): Promise<void> {
   const job = await db.job.findUnique({ where: { id: jobId }, include: { project: true } });
@@ -86,7 +116,12 @@ export async function runSlideshowJob(jobId: string): Promise<void> {
     }
 
     const size = ASPECT_SIZE[params.aspectRatio ?? "9:16"] ?? ASPECT_SIZE["9:16"];
-    const perImageSec = Math.min(Math.max(params.secondsPerImage ?? 3, 1.5), 8);
+    const style = params.style ?? "kenburns";
+    const fallbackSec = Math.min(Math.max(params.secondsPerImage ?? 3, 1.5), 8);
+    const clipDurations = orderedImages.map((_, i) => {
+      const requested = params.durations?.[i];
+      return requested && requested > 0 ? Math.min(Math.max(requested, 1), 12) : fallbackSec;
+    });
 
     await setJob(jobId, { status: "GENERATING", progress: 15, statusMessage: "Building your scenes" });
 
@@ -94,26 +129,16 @@ export async function runSlideshowJob(jobId: string): Promise<void> {
     // FFmpeg 4.3+ and the static binary this runs on (any platform) predates
     // that. concat has been stable since the 2.x line, so this renders
     // identically wherever the job runs.
-    const clipDur = perImageSec;
     const inputs: string[] = [];
     const filters: string[] = [];
 
     orderedImages.forEach((img, i) => {
       inputs.push(absolutePath(img.storagePath));
+      const clipDur = clipDurations[i];
       const frames = Math.round(clipDur * FPS);
-      // zoompan expects a single held input frame (loop 1, no -t) and emits
-      // exactly `d` frames from it; feeding it a time-limited input instead
-      // multiplies frames-in by frames-out, so trim+setpts re-clamps the
-      // output to the intended length regardless.
-      filters.push(
-        `[${i}:v]scale=${size.w}:${size.h}:force_original_aspect_ratio=increase,` +
-          `crop=${size.w}:${size.h},setsar=1,` +
-          `zoompan=z='min(zoom+0.0012,1.15)':d=${frames}:s=${size.w}x${size.h}:fps=${FPS},` +
-          `trim=duration=${clipDur.toFixed(3)},setpts=PTS-STARTPTS[v${i}]`
-      );
+      filters.push(`[${i}:v]${styleFilterChain(style, size.w, size.h, frames, clipDur)}[v${i}]`);
     });
 
-    let elapsed = clipDur * orderedImages.length;
     let videoOutLabel: string;
     if (orderedImages.length === 1) {
       videoOutLabel = "v0";
@@ -137,7 +162,7 @@ export async function runSlideshowJob(jobId: string): Promise<void> {
       captionLabel = next;
     });
 
-    const totalDur = elapsed;
+    const totalDur = clipDurations.reduce((a, b) => a + b, 0);
     const outputPath = join(workDir, "output.mp4");
 
     await setJob(jobId, { status: "PROCESSING", progress: 45, statusMessage: "Rendering frames" });

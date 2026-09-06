@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import type { Mode, Screen, ViewState } from "./types";
 import * as api from "./api";
+import type { SlideshowStyle } from "./api";
 
 const initialState: ViewState = {
   screen: "home",
@@ -43,12 +44,15 @@ interface Store extends ViewState {
   startRealSlideshow: (opts: {
     projectName: string;
     images: File[];
+    durations: number[];
     music: File | null;
     musicAssetId?: string;
     aspectRatio: "9:16" | "16:9" | "1:1";
-    secondsPerImage: number;
-    caption: string;
+    style: SlideshowStyle;
+    titleText: string;
+    endingText: string;
   }) => Promise<void>;
+  viewProjectResult: (projectId: string) => Promise<void>;
   clearRealError: () => void;
 }
 
@@ -118,16 +122,42 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setState((s) => ({ ...s, realError: null, realJobId: null }));
   }, []);
 
+  // Opens a previously-generated project's video from the Projects screen —
+  // no new job, just fetches the existing result asset.
+  const viewProjectResult = useCallback(async (projectId: string) => {
+    setState((s) => ({
+      ...s,
+      realResultUrl: null,
+      realError: null,
+      prevScreen: s.screen,
+      screen: "result",
+    }));
+    try {
+      await api.ensureAuth();
+      const project = await api.getProject(projectId);
+      const completedJob = project.jobs?.find((j) => j.status === "COMPLETED" && j.resultAssetId);
+      if (!completedJob?.resultAssetId) {
+        throw new Error("NO_RESULT");
+      }
+      const url = await api.fetchAssetBlobUrl(completedJob.resultAssetId);
+      setState((s) => ({ ...s, realResultUrl: url }));
+    } catch {
+      setState((s) => ({ ...s, screen: "projects", realError: null }));
+    }
+  }, []);
+
   // Real flow: Photo Slideshow, backed by the live API.
   const startRealSlideshow = useCallback(
     async (opts: {
       projectName: string;
       images: File[];
+      durations: number[];
       music: File | null;
       musicAssetId?: string;
       aspectRatio: "9:16" | "16:9" | "1:1";
-      secondsPerImage: number;
-      caption: string;
+      style: SlideshowStyle;
+      titleText: string;
+      endingText: string;
     }) => {
       // realPending is set synchronously, before any await, so the fake
       // progress-timer effect (gated on screen==="generating") never gets a
@@ -162,12 +192,26 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           musicAssetId = asset.id;
         }
 
+        const totalDur = opts.durations.reduce((a, b) => a + b, 0);
+        const captions: { text: string; atSec: number; durationSec: number }[] = [];
+        if (opts.titleText) {
+          captions.push({ text: opts.titleText, atSec: 0.3, durationSec: Math.min(3, totalDur) });
+        }
+        if (opts.endingText) {
+          captions.push({
+            text: opts.endingText,
+            atSec: Math.max(totalDur - 3, 0),
+            durationSec: Math.min(3, totalDur),
+          });
+        }
+
         const { job } = await api.createSlideshowJob(project.id, {
           imageAssetIds,
           musicAssetId,
-          secondsPerImage: opts.secondsPerImage,
+          durations: opts.durations,
           aspectRatio: opts.aspectRatio,
-          captions: opts.caption ? [{ text: opts.caption, atSec: 0.5, durationSec: 3 }] : undefined,
+          style: opts.style,
+          captions: captions.length ? captions : undefined,
         });
 
         setState((s) => ({ ...s, realJobId: job.id, realPending: false }));
@@ -262,6 +306,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     confirmGenerate,
     openScene,
     startRealSlideshow,
+    viewProjectResult,
     clearRealError,
   };
 

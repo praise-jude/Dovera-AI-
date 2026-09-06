@@ -10,9 +10,14 @@ projectsRouter.get("/", async (req: AuthedRequest, res) => {
   const projects = await db.project.findMany({
     where: { userId: req.userId! },
     orderBy: { updatedAt: "desc" },
-    include: { _count: { select: { assets: true, jobs: true } } },
+    include: {
+      _count: { select: { assets: true, jobs: true } },
+      jobs: { orderBy: { createdAt: "desc" }, take: 1 },
+    },
   });
-  res.json({ projects });
+  res.json({
+    projects: projects.map((p) => ({ ...p, latestJob: p.jobs[0] ?? null, jobs: undefined })),
+  });
 });
 
 const createSchema = z.object({ name: z.string().min(1).max(120) });

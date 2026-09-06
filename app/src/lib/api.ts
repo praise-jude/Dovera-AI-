@@ -70,10 +70,21 @@ export function ensureAuth(): Promise<void> {
   return authPromise;
 }
 
+export interface JobSummary {
+  id: string;
+  status: "QUEUED" | "ANALYZING" | "GENERATING" | "PROCESSING" | "ADDING_AUDIO" | "RENDERING" | "EXPORTING" | "COMPLETED" | "FAILED" | "CANCELLED";
+  resultAssetId: string | null;
+  createdAt: string;
+}
+
 export interface Project {
   id: string;
   name: string;
   status: string;
+  createdAt: string;
+  updatedAt: string;
+  latestJob: JobSummary | null;
+  _count: { assets: number; jobs: number };
 }
 
 export async function createProject(name: string): Promise<Project> {
@@ -82,6 +93,24 @@ export async function createProject(name: string): Promise<Project> {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ name }),
   });
+  return project;
+}
+
+export async function listProjects(): Promise<Project[]> {
+  const { projects } = await request<{ projects: Project[] }>("/projects");
+  return projects;
+}
+
+export async function deleteProject(id: string): Promise<void> {
+  await request<void>(`/projects/${id}`, { method: "DELETE" });
+}
+
+export interface ProjectDetail extends Omit<Project, "latestJob" | "_count"> {
+  jobs: JobSummary[];
+}
+
+export async function getProject(id: string): Promise<ProjectDetail> {
+  const { project } = await request<{ project: ProjectDetail }>(`/projects/${id}`);
   return project;
 }
 
@@ -151,11 +180,15 @@ export async function deleteAsset(id: string): Promise<void> {
   await request<void>(`/assets/${id}`, { method: "DELETE" });
 }
 
+export type SlideshowStyle = "kenburns" | "cinematic" | "vibrant" | "classic";
+
 export interface SlideshowJobParams {
   imageAssetIds: string[];
   musicAssetId?: string;
   secondsPerImage?: number;
+  durations?: number[];
   aspectRatio?: "9:16" | "16:9" | "1:1";
+  style?: SlideshowStyle;
   captions?: { text: string; atSec: number; durationSec: number }[];
 }
 
