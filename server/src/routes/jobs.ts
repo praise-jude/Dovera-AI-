@@ -15,6 +15,11 @@ const createSchema = z.object({
   params: z.object({
     imageAssetIds: z.array(z.string()).min(1).max(12),
     musicAssetId: z.string().optional(),
+    musicVolume: z.number().min(0).max(2).optional(),
+    soundEffects: z
+      .array(z.object({ assetId: z.string(), atSec: z.number().min(0), volume: z.number().min(0).max(2).optional() }))
+      .max(10)
+      .optional(),
     secondsPerImage: z.number().min(1.5).max(8).optional(),
     durations: z.array(z.number().min(1).max(12)).max(12).optional(),
     aspectRatio: z.enum(["9:16", "16:9", "1:1"]).optional(),

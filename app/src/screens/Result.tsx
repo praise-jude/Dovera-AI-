@@ -14,8 +14,14 @@ const REMIX = [
   "Different Camera", "Different Weather", "Different Time of Day", "Different Style",
 ];
 
+const EXPORT_FORMATS: { id: "9:16" | "16:9" | "1:1"; label: string }[] = [
+  { id: "9:16", label: "9:16" },
+  { id: "16:9", label: "16:9" },
+  { id: "1:1", label: "1:1" },
+];
+
 export function Result() {
-  const { go, openSheet, realResultUrl } = useStore();
+  const { go, openSheet, realResultUrl, realProjectId, exportInFormat } = useStore();
 
   return (
     <div className="screen result-screen vup">
@@ -33,6 +39,12 @@ export function Result() {
         )}
       </div>
 
+      {realResultUrl && (
+        <a className="download-cta" href={realResultUrl} download="vidora-video.mp4">
+          ↓ Download video
+        </a>
+      )}
+
       {realResultUrl ? (
         <div className="result-header">
           <div className="real-badge" style={{ marginBottom: 8 }}>
@@ -49,33 +61,42 @@ export function Result() {
         </div>
       )}
 
-      <div className="section-label">Finish</div>
-      <div className="finish-grid">
-        {FINISH.map((f) => (
-          <button key={f.id} className="finish-card" onClick={() => go(f.id as any)}>
-            <div className="finish-title">{f.title}</div>
-            <div className="finish-meta">{f.meta}</div>
-          </button>
-        ))}
-      </div>
-
-      <div className="section-label">Remix · keeps the original</div>
-      <div className="remix-chip-row">
-        {REMIX.map((r) => (
-          <Chip key={r} onClick={openSheet}>{r}</Chip>
-        ))}
-      </div>
-
-      <button className="continue-cta" onClick={openSheet}>Continue this video →</button>
-      {realResultUrl ? (
-        <p className="disclaimer-note">
-          Finish, Remix and Continue below are part of the interactive design preview and aren't
-          wired to real generation yet — only the video above is a real render.
-        </p>
+      {realResultUrl && realProjectId ? (
+        <>
+          <div className="section-label">Export as</div>
+          <p className="disclaimer-note" style={{ margin: "0 2px 10px" }}>
+            Re-renders your same photos, music and style at a different aspect ratio (uses credits again — it's a real render, not a crop).
+          </p>
+          <div className="style-chip-row">
+            {EXPORT_FORMATS.map((f) => (
+              <Chip key={f.id} onClick={() => exportInFormat(f.id)}>{f.label}</Chip>
+            ))}
+          </div>
+        </>
       ) : (
-        <p className="disclaimer-note">
-          Extension continues motion and style where the provider supports it — continuity isn't guaranteed.
-        </p>
+        <>
+          <div className="section-label">Finish</div>
+          <div className="finish-grid">
+            {FINISH.map((f) => (
+              <button key={f.id} className="finish-card" onClick={() => go(f.id as any)}>
+                <div className="finish-title">{f.title}</div>
+                <div className="finish-meta">{f.meta}</div>
+              </button>
+            ))}
+          </div>
+
+          <div className="section-label">Remix · keeps the original</div>
+          <div className="remix-chip-row">
+            {REMIX.map((r) => (
+              <Chip key={r} onClick={openSheet}>{r}</Chip>
+            ))}
+          </div>
+
+          <button className="continue-cta" onClick={openSheet}>Continue this video →</button>
+          <p className="disclaimer-note">
+            Extension continues motion and style where the provider supports it — continuity isn't guaranteed.
+          </p>
+        </>
       )}
     </div>
   );

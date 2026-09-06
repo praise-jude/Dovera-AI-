@@ -118,4 +118,5 @@ export const SCREEN_META: Record<string, { title: string; subtitle: string }> = 
   slideshow: { title: "Photo Slideshow", subtitle: "Real generation — no simulation" },
   "music-library": { title: "My Music & Sounds", subtitle: "Your uploads, real storage" },
   billing: { title: "Billing", subtitle: "Manage your subscription" },
+  account: { title: "Account", subtitle: "Sign in, log out, switch devices" },
 };

@@ -138,7 +138,8 @@ model Asset {
   user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   project Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
 
-  resultOfJobs Job[] @relation("JobResultAsset")
+  resultOfJobs    Job[] @relation("JobResultAsset")
+  thumbnailOfJobs Job[] @relation("JobThumbnailAsset")
 
   @@index([userId])
   @@index([projectId])
@@ -157,11 +158,13 @@ model Job {
   creditsEstimated  Int       @default(0)
   creditsCharged    Int       @default(0)
   resultAssetId     String?
+  thumbnailAssetId  String?
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
-  project     Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  resultAsset Asset?  @relation("JobResultAsset", fields: [resultAssetId], references: [id])
+  project        Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  resultAsset    Asset?  @relation("JobResultAsset", fields: [resultAssetId], references: [id])
+  thumbnailAsset Asset?  @relation("JobThumbnailAsset", fields: [thumbnailAssetId], references: [id])
 
   @@index([projectId])
 }

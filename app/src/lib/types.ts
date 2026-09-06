@@ -16,7 +16,8 @@ export type Screen =
   | "projects"
   | "slideshow"
   | "music-library"
-  | "billing";
+  | "billing"
+  | "account";
 
 export type Mode = "Text → Video" | "Image → Video" | "Director";
 
@@ -46,6 +47,7 @@ export interface ViewState {
   credits: string;
   activeSceneId: number;
   realJobId: string | null;
+  realProjectId: string | null;
   realPending: boolean;
   realStatusMessage: string | null;
   realResultUrl: string | null;

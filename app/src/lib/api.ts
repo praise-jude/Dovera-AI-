@@ -46,6 +46,13 @@ async function request<T>(path: string, opts: RequestInit = {}): Promise<T> {
 // account and its own projects.
 let authPromise: Promise<void> | null = null;
 
+// Called after login()/logout() so the next ensureAuth() re-checks against
+// whatever token now actually lives in localStorage, instead of reusing a
+// stale resolved promise from a previous account.
+function resetAuthCache(): void {
+  authPromise = null;
+}
+
 export function ensureAuth(): Promise<void> {
   if (authPromise) return authPromise;
   authPromise = (async () => {
@@ -74,6 +81,8 @@ export interface JobSummary {
   id: string;
   status: "QUEUED" | "ANALYZING" | "GENERATING" | "PROCESSING" | "ADDING_AUDIO" | "RENDERING" | "EXPORTING" | "COMPLETED" | "FAILED" | "CANCELLED";
   resultAssetId: string | null;
+  thumbnailAssetId: string | null;
+  params: SlideshowJobParams;
   createdAt: string;
 }
 
@@ -103,6 +112,15 @@ export async function listProjects(): Promise<Project[]> {
 
 export async function deleteProject(id: string): Promise<void> {
   await request<void>(`/projects/${id}`, { method: "DELETE" });
+}
+
+export async function renameProject(id: string, name: string): Promise<Project> {
+  const { project } = await request<{ project: Project }>(`/projects/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
+  return project;
 }
 
 export interface ProjectDetail extends Omit<Project, "latestJob" | "_count"> {
@@ -185,6 +203,8 @@ export type SlideshowStyle = "kenburns" | "cinematic" | "vibrant" | "classic";
 export interface SlideshowJobParams {
   imageAssetIds: string[];
   musicAssetId?: string;
+  musicVolume?: number;
+  soundEffects?: { assetId: string; atSec: number; volume?: number }[];
   secondsPerImage?: number;
   durations?: number[];
   aspectRatio?: "9:16" | "16:9" | "1:1";
@@ -199,6 +219,7 @@ export interface JobRecord {
   statusMessage: string | null;
   error: string | null;
   resultAssetId: string | null;
+  thumbnailAssetId: string | null;
   creditsEstimated: number;
   creditsCharged: number;
 }
@@ -265,4 +286,50 @@ export async function verifyPayment(reference: string): Promise<{ status: string
 
 export async function cancelSubscription(): Promise<void> {
   await request("/billing/cancel", { method: "POST" });
+}
+
+export interface Account {
+  id: string;
+  email: string;
+  name: string | null;
+  plan: "FREE" | "PREMIUM";
+  credits: number;
+  isDeviceAccount: boolean;
+}
+
+export async function getAccount(): Promise<Account> {
+  return request("/auth/me");
+}
+
+// Turns this device's auto-created account into one with a real email and
+// password the user chose — the same account, now reachable by logging in
+// on another device instead of only ever having an implicit local one.
+export async function setCredentials(email: string, password: string): Promise<Account> {
+  return request("/auth/credentials", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password }),
+  });
+}
+
+export async function login(email: string, password: string): Promise<void> {
+  const { token } = await request<{ token: string }>("/auth/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password }),
+  });
+  setToken(token);
+  resetAuthCache();
+}
+
+// Drops the stored session. The next ensureAuth() call creates a brand new
+// implicit device account — any projects tied to the old account become
+// unreachable from this browser unless its credentials were saved first.
+export function logout(): void {
+  try {
+    localStorage.removeItem(TOKEN_KEY);
+  } catch {
+    // ignore
+  }
+  resetAuthCache();
 }

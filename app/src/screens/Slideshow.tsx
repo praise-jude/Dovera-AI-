@@ -29,6 +29,12 @@ function formatDuration(sec: number | null): string {
   return `${m}:${String(s).padStart(2, "0")}`;
 }
 
+interface AddedSfx {
+  assetId: string;
+  atSec: number;
+  filename: string;
+}
+
 export function Slideshow() {
   const { startRealSlideshow } = useStore();
   const [images, setImages] = useState<File[]>([]);
@@ -38,6 +44,11 @@ export function Slideshow() {
   const [libraryMusic, setLibraryMusic] = useState<UploadedAsset[]>([]);
   const [pickedMusicId, setPickedMusicId] = useState<string | null>(null);
   const [syncToMusic, setSyncToMusic] = useState(false);
+  const [musicVolume, setMusicVolume] = useState(0.9);
+  const [librarySfx, setLibrarySfx] = useState<UploadedAsset[]>([]);
+  const [sfxPickId, setSfxPickId] = useState<string | null>(null);
+  const [sfxAtSec, setSfxAtSec] = useState(0);
+  const [soundEffects, setSoundEffects] = useState<AddedSfx[]>([]);
   const [aspect, setAspect] = useState<"9:16" | "16:9" | "1:1">("9:16");
   const [style, setStyle] = useState<SlideshowStyle>("kenburns");
   const [titleText, setTitleText] = useState("");
@@ -51,6 +62,11 @@ export function Slideshow() {
       .ensureAuth()
       .then(() => api.listLibrary({ kind: "AUDIO", category: "MUSIC" }))
       .then(setLibraryMusic)
+      .catch(() => {});
+    api
+      .ensureAuth()
+      .then(() => api.listLibrary({ kind: "AUDIO", category: "SFX" }))
+      .then(setLibrarySfx)
       .catch(() => {});
   }, []);
 
@@ -257,6 +273,86 @@ export function Slideshow() {
         </button>
       )}
 
+      {(music || pickedMusicId) && (
+        <>
+          <div className="section-label">Music volume</div>
+          <div className="voice-slider-row" style={{ marginBottom: 4 }}>
+            <input
+              type="range"
+              min={0}
+              max={1.5}
+              step={0.05}
+              value={musicVolume}
+              onChange={(e) => setMusicVolume(Number(e.target.value))}
+              className="voice-slider"
+              aria-label="Music volume"
+            />
+            <span className="mono">{musicVolume.toFixed(2)}×</span>
+          </div>
+        </>
+      )}
+
+      {librarySfx.length > 0 && (
+        <>
+          <div className="section-label">Sound effects (optional)</div>
+          <p className="disclaimer-note" style={{ margin: "0 2px 8px" }}>
+            Pick one from My Music &amp; Sounds, choose when it plays, then add it.
+          </p>
+          <div className="suggestion-row" style={{ marginBottom: 10 }}>
+            {librarySfx.map((s) => (
+              <Chip key={s.id} selected={sfxPickId === s.id} onClick={() => setSfxPickId((cur) => (cur === s.id ? null : s.id))}>
+                {s.filename}
+              </Chip>
+            ))}
+          </div>
+          {sfxPickId && (
+            <div className="sfx-add-row">
+              <span className="disclaimer-note" style={{ margin: 0 }}>at</span>
+              <input
+                type="number"
+                className="text-input sfx-at-input"
+                min={0}
+                step={0.5}
+                value={sfxAtSec}
+                onChange={(e) => setSfxAtSec(Math.max(0, Number(e.target.value)))}
+              />
+              <span className="disclaimer-note" style={{ margin: 0 }}>sec</span>
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  const asset = librarySfx.find((s) => s.id === sfxPickId);
+                  if (!asset) return;
+                  setSoundEffects((list) => [...list, { assetId: asset.id, atSec: sfxAtSec, filename: asset.filename }]);
+                  setSfxPickId(null);
+                  setSfxAtSec(0);
+                }}
+              >
+                Add
+              </Button>
+            </div>
+          )}
+          {soundEffects.length > 0 && (
+            <div className="slideshow-photo-list" style={{ marginBottom: 10 }}>
+              {soundEffects.map((sfx, i) => (
+                <div key={i} className="slideshow-photo-row">
+                  <div className="slideshow-photo-row-info" style={{ paddingLeft: 4 }}>
+                    <span className="mono">{sfx.filename}</span>
+                    <span className="mono slideshow-synced-duration">at {sfx.atSec.toFixed(1)}s</span>
+                  </div>
+                  <button
+                    className="library-icon-btn library-icon-btn-danger"
+                    aria-label={`Remove ${sfx.filename}`}
+                    onClick={() => setSoundEffects((list) => list.filter((_, idx) => idx !== i))}
+                  >
+                    <IconClose width={13} height={13} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+
       <div className="section-label">Style</div>
       <div className="camera-grid">
         {STYLES.map((s) => (
@@ -307,6 +403,10 @@ export function Slideshow() {
             durations: effectiveDurations,
             music,
             musicAssetId: pickedMusicId ?? undefined,
+            musicVolume: music || pickedMusicId ? musicVolume : undefined,
+            soundEffects: soundEffects.length
+              ? soundEffects.map(({ assetId, atSec }) => ({ assetId, atSec }))
+              : undefined,
             aspectRatio: aspect,
             style,
             titleText,

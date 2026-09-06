@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import * as api from "../lib/api";
 import type { BillingStatus } from "../lib/api";
 import { Button } from "../components/ui";
+import { useStore } from "../lib/store";
 
 function formatNaira(kobo: number): string {
   return `₦${(kobo / 100).toLocaleString()}`;
@@ -13,6 +14,7 @@ function formatDate(iso: string | null): string {
 }
 
 export function Billing() {
+  const { go } = useStore();
   const [status, setStatus] = useState<BillingStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -130,6 +132,11 @@ export function Billing() {
           )}
 
           {error && <p className="disclaimer-note" style={{ color: "var(--danger)", marginTop: 12 }}>{error}</p>}
+
+          <div className="section-label">Account</div>
+          <Button variant="secondary" full onClick={() => go("account")}>
+            Manage account &amp; login
+          </Button>
         </>
       )}
     </div>

@@ -30,12 +30,15 @@ const ASPECT_SIZE: Record<string, { w: number; h: number }> = {
 
 const FPS = 30;
 const MAX_IMAGES = 12;
+const MAX_SFX = 10;
 
 export type SlideshowStyle = "kenburns" | "cinematic" | "vibrant" | "classic";
 
 export interface SlideshowParams {
   imageAssetIds: string[];
   musicAssetId?: string;
+  musicVolume?: number;
+  soundEffects?: { assetId: string; atSec: number; volume?: number }[];
   secondsPerImage?: number;
   durations?: number[];
   aspectRatio?: "9:16" | "16:9" | "1:1";
@@ -115,6 +118,20 @@ export async function runSlideshowJob(jobId: string): Promise<void> {
       });
     }
 
+    const requestedSfx = (params.soundEffects ?? []).slice(0, MAX_SFX);
+    const sfxAssets =
+      requestedSfx.length > 0
+        ? await db.asset.findMany({
+            where: { id: { in: requestedSfx.map((s) => s.assetId) }, userId: job.project.userId, kind: "AUDIO" },
+          })
+        : [];
+    const soundEffects = requestedSfx
+      .map((s) => ({ ...s, asset: sfxAssets.find((a) => a.id === s.assetId) }))
+      .filter((s): s is typeof s & { asset: NonNullable<(typeof s)["asset"]> } => Boolean(s.asset));
+
+    const user = await db.user.findUnique({ where: { id: job.project.userId } });
+    const needsWatermark = user?.plan !== "PREMIUM";
+
     const size = ASPECT_SIZE[params.aspectRatio ?? "9:16"] ?? ASPECT_SIZE["9:16"];
     const style = params.style ?? "kenburns";
     const fallbackSec = Math.min(Math.max(params.secondsPerImage ?? 3, 1.5), 8);
@@ -149,18 +166,29 @@ export async function runSlideshowJob(jobId: string): Promise<void> {
     }
 
     // burned-in captions
-    let captionLabel = videoOutLabel;
+    let videoLabel = videoOutLabel;
     (params.captions ?? []).slice(0, 20).forEach((c, i) => {
       const next = `cap${i}`;
       const start = Math.max(c.atSec, 0);
       const end = start + Math.max(c.durationSec, 0.5);
       filters.push(
-        `[${captionLabel}]drawtext=fontfile='${ESCAPED_FONT_PATH}':text='${escapeDrawtext(c.text)}':fontcolor=white:fontsize=${Math.round(
+        `[${videoLabel}]drawtext=fontfile='${ESCAPED_FONT_PATH}':text='${escapeDrawtext(c.text)}':fontcolor=white:fontsize=${Math.round(
           size.w / 18
         )}:box=1:boxcolor=black@0.55:boxborderw=14:x=(w-text_w)/2:y=h-h/6:enable='between(t,${start},${end})'[${next}]`
       );
-      captionLabel = next;
+      videoLabel = next;
     });
+
+    // Free-plan watermark — small, unobtrusive, but always present on a
+    // non-Premium export. Applied last so nothing else can cover it.
+    if (needsWatermark) {
+      filters.push(
+        `[${videoLabel}]drawtext=fontfile='${ESCAPED_FONT_PATH}':text='VIDORA AI':fontcolor=white@0.65:fontsize=${Math.round(
+          size.w / 26
+        )}:x=w-text_w-16:y=h-text_h-14[watermarked]`
+      );
+      videoLabel = "watermarked";
+    }
 
     const totalDur = clipDurations.reduce((a, b) => a + b, 0);
     const outputPath = join(workDir, "output.mp4");
@@ -171,18 +199,52 @@ export async function runSlideshowJob(jobId: string): Promise<void> {
       const cmd = ffmpeg();
       inputs.forEach((path) => cmd.input(path).inputOptions(["-loop 1"]));
 
-      let audioMapArgs: string[] = [];
+      // Audio: music (trimmed/faded/volumed) and any sound effects (delayed
+      // to their chosen timestamp) are each normalized to a labeled track,
+      // then combined with amix if there's more than one. amix in this
+      // ffmpeg build always divides output level by input count (the
+      // `normalize` toggle to disable that landed in later ffmpeg versions
+      // than the bundled binary) — the trailing volume=N compensates.
+      const audioLabels: string[] = [];
+      let nextAudioInputIndex = inputs.length;
+
       if (music) {
         cmd.input(absolutePath(music.storagePath));
+        const musicVolume = Math.min(Math.max(params.musicVolume ?? 0.9, 0), 2);
         filters.push(
-          `[${inputs.length}:a]atrim=0:${totalDur.toFixed(2)},afade=t=in:st=0:d=1,` +
-            `afade=t=out:st=${Math.max(totalDur - 1.5, 0).toFixed(2)}:d=1.5,volume=0.9[aout]`
+          `[${nextAudioInputIndex}:a]atrim=0:${totalDur.toFixed(2)},afade=t=in:st=0:d=1,` +
+            `afade=t=out:st=${Math.max(totalDur - 1.5, 0).toFixed(2)}:d=1.5,volume=${musicVolume}[music0]`
+        );
+        audioLabels.push("music0");
+        nextAudioInputIndex += 1;
+      }
+
+      soundEffects.forEach((sfx, i) => {
+        cmd.input(absolutePath(sfx.asset.storagePath));
+        const atMs = Math.max(0, Math.round(sfx.atSec * 1000));
+        const vol = Math.min(Math.max(sfx.volume ?? 1, 0), 2);
+        const label = `sfx${i}`;
+        filters.push(
+          `[${nextAudioInputIndex}:a]aformat=sample_fmts=fltp:channel_layouts=stereo,` +
+            `adelay=${atMs}|${atMs},volume=${vol},apad,atrim=0:${totalDur.toFixed(2)}[${label}]`
+        );
+        audioLabels.push(label);
+        nextAudioInputIndex += 1;
+      });
+
+      let audioMapArgs: string[] = [];
+      if (audioLabels.length === 1) {
+        filters.push(`[${audioLabels[0]}]anull[aout]`);
+        audioMapArgs = ["-map", "[aout]"];
+      } else if (audioLabels.length > 1) {
+        filters.push(
+          `${audioLabels.map((l) => `[${l}]`).join("")}amix=inputs=${audioLabels.length}:duration=longest:dropout_transition=0,volume=${audioLabels.length}[aout]`
         );
         audioMapArgs = ["-map", "[aout]"];
       }
 
       cmd
-        .complexFilter(filters, [captionLabel])
+        .complexFilter(filters, [videoLabel])
         .outputOptions([
           ...audioMapArgs,
           "-c:v", "libx264",
@@ -223,11 +285,48 @@ export async function runSlideshowJob(jobId: string): Promise<void> {
       },
     });
 
+    // Real thumbnail — a genuine mid-video frame, not a placeholder icon.
+    let thumbnailAssetId: string | null = null;
+    try {
+      const thumbPath = join(workDir, "thumb.jpg");
+      await new Promise<void>((resolve, reject) => {
+        ffmpeg(outputPath)
+          .seekInput(Math.max(totalDur / 2, 0.1))
+          .frames(1)
+          .outputOptions(["-vf", "scale=360:-2"])
+          .output(thumbPath)
+          .on("end", () => resolve())
+          .on("error", (err) => reject(err))
+          .run();
+      });
+      const thumbStat = await fsStat(thumbPath);
+      const thumbFilename = `${randomUUID()}.jpg`;
+      const { readFile, writeFile } = await import("node:fs/promises");
+      await writeFile(join(dir, thumbFilename), await readFile(thumbPath));
+      const thumbAsset = await db.asset.create({
+        data: {
+          userId: job.project.userId,
+          projectId: job.projectId,
+          kind: "IMAGE",
+          filename: `${job.project.name} thumbnail.jpg`,
+          storagePath: storagePathFor(job.project.userId, thumbFilename),
+          mimeType: "image/jpeg",
+          sizeBytes: thumbStat.size,
+        },
+      });
+      thumbnailAssetId = thumbAsset.id;
+    } catch (err) {
+      // Thumbnail generation is a nice-to-have — never fail the whole job
+      // over it, the video itself already rendered successfully.
+      console.error(`[job ${jobId}] thumbnail generation failed:`, err);
+    }
+
     await setJob(jobId, {
       status: "COMPLETED",
       progress: 100,
       statusMessage: "Done",
       resultAssetId: resultAsset.id,
+      thumbnailAssetId,
       creditsCharged: job.creditsEstimated,
     });
   } catch (err) {

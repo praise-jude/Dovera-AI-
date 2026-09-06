@@ -20,6 +20,7 @@ const initialState: ViewState = {
   credits: "1,240",
   activeSceneId: 2,
   realJobId: null,
+  realProjectId: null,
   realPending: false,
   realStatusMessage: null,
   realResultUrl: null,
@@ -47,12 +48,15 @@ interface Store extends ViewState {
     durations: number[];
     music: File | null;
     musicAssetId?: string;
+    musicVolume?: number;
+    soundEffects?: { assetId: string; atSec: number; volume?: number }[];
     aspectRatio: "9:16" | "16:9" | "1:1";
     style: SlideshowStyle;
     titleText: string;
     endingText: string;
   }) => Promise<void>;
   viewProjectResult: (projectId: string) => Promise<void>;
+  exportInFormat: (aspectRatio: "9:16" | "16:9" | "1:1") => Promise<void>;
   clearRealError: () => void;
 }
 
@@ -68,6 +72,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<ViewState>(initialState);
   const genTimer = useRef<number | null>(null);
   const pollTimer = useRef<number | null>(null);
+  // Lets callbacks with an empty dependency array (defined once) read the
+  // latest state for a one-off check before an async action, without
+  // needing to be recreated on every state change just for that read.
+  const stateRef = useRef(state);
+  useEffect(() => {
+    stateRef.current = state;
+  }, [state]);
 
   const go = useCallback((screen: Screen) => {
     setState((s) => (s.screen === screen ? s : { ...s, prevScreen: s.screen, screen }));
@@ -129,6 +140,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       ...s,
       realResultUrl: null,
       realError: null,
+      realProjectId: projectId,
       prevScreen: s.screen,
       screen: "result",
     }));
@@ -146,6 +158,43 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  // Re-renders the same source photos/music/style for the current project
+  // in a different aspect ratio — reuses the last completed job's params
+  // rather than asking the user to redo everything.
+  const exportInFormat = useCallback(async (aspectRatio: "9:16" | "16:9" | "1:1") => {
+    const projectId = stateRef.current.realProjectId;
+    if (!projectId) return;
+    setState((s) => ({
+      ...s,
+      prog: 0,
+      realJobId: null,
+      realPending: true,
+      realError: null,
+      realResultUrl: null,
+      realStatusMessage: "Preparing export",
+      prevScreen: s.screen,
+      screen: "generating",
+    }));
+    try {
+      await api.ensureAuth();
+      const project = await api.getProject(projectId);
+      const completedJob = project.jobs?.find((j) => j.status === "COMPLETED");
+      if (!completedJob) throw new Error("NO_SOURCE_JOB");
+
+      const { job } = await api.createSlideshowJob(projectId, {
+        ...completedJob.params,
+        aspectRatio,
+      });
+      setState((s) => ({ ...s, realProjectId: projectId, realJobId: job.id, realPending: false }));
+    } catch (err) {
+      setState((s) => ({
+        ...s,
+        realPending: false,
+        realError: err instanceof api.ApiError ? err.message : "Couldn't start that export. Please try again.",
+      }));
+    }
+  }, []);
+
   // Real flow: Photo Slideshow, backed by the live API.
   const startRealSlideshow = useCallback(
     async (opts: {
@@ -154,6 +203,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       durations: number[];
       music: File | null;
       musicAssetId?: string;
+      musicVolume?: number;
+      soundEffects?: { assetId: string; atSec: number; volume?: number }[];
       aspectRatio: "9:16" | "16:9" | "1:1";
       style: SlideshowStyle;
       titleText: string;
@@ -208,13 +259,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         const { job } = await api.createSlideshowJob(project.id, {
           imageAssetIds,
           musicAssetId,
+          musicVolume: opts.musicVolume,
+          soundEffects: opts.soundEffects,
           durations: opts.durations,
           aspectRatio: opts.aspectRatio,
           style: opts.style,
           captions: captions.length ? captions : undefined,
         });
 
-        setState((s) => ({ ...s, realJobId: job.id, realPending: false }));
+        setState((s) => ({ ...s, realProjectId: project.id, realJobId: job.id, realPending: false }));
       } catch (err) {
         setState((s) => ({
           ...s,
@@ -307,6 +360,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     openScene,
     startRealSlideshow,
     viewProjectResult,
+    exportInFormat,
     clearRealError,
   };
 
