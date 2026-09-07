@@ -15,6 +15,7 @@ export type Screen =
   | "captions"
   | "projects"
   | "slideshow"
+  | "text-to-video"
   | "music-library"
   | "billing"
   | "account";
@@ -47,6 +48,7 @@ export interface ViewState {
   credits: string;
   activeSceneId: number;
   realJobId: string | null;
+  realJobType: string | null;
   realProjectId: string | null;
   realPending: boolean;
   realStatusMessage: string | null;

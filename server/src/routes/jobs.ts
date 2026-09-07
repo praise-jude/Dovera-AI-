@@ -3,13 +3,19 @@ import { z } from "zod";
 import { db } from "../db.js";
 import { requireAuth, type AuthedRequest } from "../lib/auth.js";
 import { runSlideshowJob } from "../worker/slideshow.js";
+import { runTextToVideoJob } from "../worker/textToVideo.js";
+import { isRunwayConfigured } from "../lib/runway.js";
 
 export const jobsRouter = Router();
 jobsRouter.use(requireAuth);
 
 const CREDITS_PER_SLIDESHOW = 5;
+// Runway's Gen-4 Turbo costs $0.05/real-second — these charge roughly the
+// same $-per-credit rate as the rest of the app rather than a flat number,
+// so a 4s/6s/8s clip visibly costs more the longer it runs.
+const CREDITS_PER_T2V_SECOND = 5;
 
-const createSchema = z.object({
+const slideshowSchema = z.object({
   projectId: z.string(),
   type: z.literal("SLIDESHOW_VIDEO"),
   params: z.object({
@@ -31,13 +37,30 @@ const createSchema = z.object({
   }),
 });
 
+const textToVideoSchema = z.object({
+  projectId: z.string(),
+  type: z.literal("TEXT_TO_VIDEO"),
+  params: z.object({
+    prompt: z.string().min(3).max(1000),
+    ratio: z.enum(["1280:720", "720:1280", "960:960"]),
+    duration: z.union([z.literal(4), z.literal(6), z.literal(8)]),
+  }),
+});
+
+const createSchema = z.discriminatedUnion("type", [slideshowSchema, textToVideoSchema]);
+
 jobsRouter.post("/", async (req: AuthedRequest, res) => {
   const parsed = createSchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid job request." });
     return;
   }
-  const { projectId, params } = parsed.data;
+  const { projectId, type, params } = parsed.data;
+
+  if (type === "TEXT_TO_VIDEO" && !isRunwayConfigured()) {
+    res.status(503).json({ error: "AI text-to-video isn't configured on this server yet. Please try again shortly." });
+    return;
+  }
 
   const project = await db.project.findFirst({ where: { id: projectId, userId: req.userId! } });
   if (!project) {
@@ -46,7 +69,7 @@ jobsRouter.post("/", async (req: AuthedRequest, res) => {
   }
 
   const user = await db.user.findUniqueOrThrow({ where: { id: req.userId! } });
-  const estimate = CREDITS_PER_SLIDESHOW;
+  const estimate = type === "SLIDESHOW_VIDEO" ? CREDITS_PER_SLIDESHOW : params.duration * CREDITS_PER_T2V_SECOND;
   if (user.credits < estimate) {
     res.status(402).json({ error: "Not enough credits for this generation.", creditsRequired: estimate, creditsAvailable: user.credits });
     return;
@@ -55,8 +78,8 @@ jobsRouter.post("/", async (req: AuthedRequest, res) => {
   const job = await db.job.create({
     data: {
       projectId,
-      type: "SLIDESHOW_VIDEO",
-      provider: "ffmpeg-local",
+      type,
+      provider: type === "SLIDESHOW_VIDEO" ? "ffmpeg-local" : "runway",
       status: "QUEUED",
       params: params as object,
       creditsEstimated: estimate,
@@ -66,7 +89,8 @@ jobsRouter.post("/", async (req: AuthedRequest, res) => {
   // Fire-and-forget: the HTTP response returns immediately with the job id;
   // the client polls GET /jobs/:id for status. On completion we deduct
   // creditsEstimated from the user; on failure we deduct nothing.
-  void runSlideshowJob(job.id).then(async () => {
+  const run = type === "SLIDESHOW_VIDEO" ? runSlideshowJob : runTextToVideoJob;
+  void run(job.id).then(async () => {
     const finished = await db.job.findUnique({ where: { id: job.id } });
     if (finished?.status === "COMPLETED" && finished.creditsCharged > 0) {
       await db.user.update({

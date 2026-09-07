@@ -116,6 +116,7 @@ export const SCREEN_META: Record<string, { title: string; subtitle: string }> = 
   captions: { title: "Captions Studio", subtitle: "Auto transcript · editable" },
   projects: { title: "My Projects", subtitle: "Autosaved · versioned" },
   slideshow: { title: "Photo Slideshow", subtitle: "Real generation — no simulation" },
+  "text-to-video": { title: "Prompt → Video", subtitle: "Real AI video generation" },
   "music-library": { title: "My Music & Sounds", subtitle: "Your uploads, real storage" },
   billing: { title: "Billing", subtitle: "Manage your subscription" },
   account: { title: "Account", subtitle: "Sign in, log out, switch devices" },

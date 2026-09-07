@@ -17,6 +17,7 @@ import { VoiceStudio } from "./screens/VoiceStudio";
 import { CaptionsStudio } from "./screens/CaptionsStudio";
 import { Projects } from "./screens/Projects";
 import { Slideshow } from "./screens/Slideshow";
+import { PromptVideo } from "./screens/PromptVideo";
 import { MusicLibrary } from "./screens/MusicLibrary";
 import { Billing } from "./screens/Billing";
 import { Account } from "./screens/Account";
@@ -40,6 +41,7 @@ const SCREEN_MAP: Record<Screen, FC> = {
   captions: CaptionsStudio,
   projects: Projects,
   slideshow: Slideshow,
+  "text-to-video": PromptVideo,
   "music-library": MusicLibrary,
   billing: Billing,
   account: Account,
@@ -52,7 +54,7 @@ function Shell() {
   const { screen, credits, back, go, realResultUrl } = useStore();
   const ScreenComponent = SCREEN_MAP[screen];
   const chromeless = CHROMELESS.includes(screen);
-  const subtitleOverride = screen === "result" && realResultUrl ? "Your slideshow · real render" : undefined;
+  const subtitleOverride = screen === "result" && realResultUrl ? "Your video · real render" : undefined;
 
   return (
     <div className="app-root">

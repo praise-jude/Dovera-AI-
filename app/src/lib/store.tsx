@@ -20,6 +20,7 @@ const initialState: ViewState = {
   credits: "1,240",
   activeSceneId: 2,
   realJobId: null,
+  realJobType: null,
   realProjectId: null,
   realPending: false,
   realStatusMessage: null,
@@ -54,6 +55,12 @@ interface Store extends ViewState {
     style: SlideshowStyle;
     titleText: string;
     endingText: string;
+  }) => Promise<void>;
+  startTextToVideo: (opts: {
+    projectName: string;
+    prompt: string;
+    ratio: api.TextToVideoRatio;
+    duration: api.TextToVideoDuration;
   }) => Promise<void>;
   viewProjectResult: (projectId: string) => Promise<void>;
   exportInFormat: (aspectRatio: "9:16" | "16:9" | "1:1") => Promise<void>;
@@ -152,7 +159,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         throw new Error("NO_RESULT");
       }
       const url = api.getAssetFileUrl(completedJob.resultAssetId);
-      setState((s) => ({ ...s, realResultUrl: url }));
+      setState((s) => ({ ...s, realResultUrl: url, realJobType: completedJob.type }));
     } catch {
       setState((s) => ({ ...s, screen: "projects", realError: null }));
     }
@@ -178,14 +185,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     try {
       await api.ensureAuth();
       const project = await api.getProject(projectId);
-      const completedJob = project.jobs?.find((j) => j.status === "COMPLETED");
+      const completedJob = project.jobs?.find((j) => j.status === "COMPLETED" && j.type === "SLIDESHOW_VIDEO");
       if (!completedJob) throw new Error("NO_SOURCE_JOB");
 
       const { job } = await api.createSlideshowJob(projectId, {
-        ...completedJob.params,
+        ...(completedJob.params as api.SlideshowJobParams),
         aspectRatio,
       });
-      setState((s) => ({ ...s, realProjectId: projectId, realJobId: job.id, realPending: false }));
+      setState((s) => ({ ...s, realProjectId: projectId, realJobId: job.id, realJobType: "SLIDESHOW_VIDEO", realPending: false }));
     } catch (err) {
       setState((s) => ({
         ...s,
@@ -267,7 +274,40 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           captions: captions.length ? captions : undefined,
         });
 
-        setState((s) => ({ ...s, realProjectId: project.id, realJobId: job.id, realPending: false }));
+        setState((s) => ({ ...s, realProjectId: project.id, realJobId: job.id, realJobType: "SLIDESHOW_VIDEO", realPending: false }));
+      } catch (err) {
+        setState((s) => ({
+          ...s,
+          realPending: false,
+          realError: err instanceof api.ApiError ? err.message : "Couldn't start generation. Please try again.",
+        }));
+      }
+    },
+    []
+  );
+
+  const startTextToVideo = useCallback(
+    async (opts: { projectName: string; prompt: string; ratio: api.TextToVideoRatio; duration: api.TextToVideoDuration }) => {
+      setState((s) => ({
+        ...s,
+        prog: 0,
+        realJobId: null,
+        realPending: true,
+        realError: null,
+        realResultUrl: null,
+        realStatusMessage: "Sending your prompt",
+        prevScreen: s.screen,
+        screen: "generating",
+      }));
+      try {
+        await api.ensureAuth();
+        const project = await api.createProject(opts.projectName || "Untitled prompt video");
+        const { job } = await api.createTextToVideoJob(project.id, {
+          prompt: opts.prompt,
+          ratio: opts.ratio,
+          duration: opts.duration,
+        });
+        setState((s) => ({ ...s, realProjectId: project.id, realJobId: job.id, realJobType: "TEXT_TO_VIDEO", realPending: false }));
       } catch (err) {
         setState((s) => ({
           ...s,
@@ -316,6 +356,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             ...s,
             prog: 100,
             realResultUrl: url,
+            realJobType: job.type,
             credits: me ? me.credits.toLocaleString() : s.credits,
             screen: "result",
             prevScreen: "generating",
@@ -359,6 +400,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     confirmGenerate,
     openScene,
     startRealSlideshow,
+    startTextToVideo,
     viewProjectResult,
     exportInFormat,
     clearRealError,

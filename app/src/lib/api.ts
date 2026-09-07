@@ -79,10 +79,11 @@ export function ensureAuth(): Promise<void> {
 
 export interface JobSummary {
   id: string;
+  type: "SLIDESHOW_VIDEO" | "TEXT_TO_VIDEO" | "IMAGE_TO_VIDEO" | "VOICEOVER" | "AI_MUSIC";
   status: "QUEUED" | "ANALYZING" | "GENERATING" | "PROCESSING" | "ADDING_AUDIO" | "RENDERING" | "EXPORTING" | "COMPLETED" | "FAILED" | "CANCELLED";
   resultAssetId: string | null;
   thumbnailAssetId: string | null;
-  params: SlideshowJobParams;
+  params: SlideshowJobParams | TextToVideoJobParams;
   createdAt: string;
 }
 
@@ -214,6 +215,7 @@ export interface SlideshowJobParams {
 
 export interface JobRecord {
   id: string;
+  type: "SLIDESHOW_VIDEO" | "TEXT_TO_VIDEO" | "IMAGE_TO_VIDEO" | "VOICEOVER" | "AI_MUSIC";
   status: "QUEUED" | "ANALYZING" | "GENERATING" | "PROCESSING" | "ADDING_AUDIO" | "RENDERING" | "EXPORTING" | "COMPLETED" | "FAILED" | "CANCELLED";
   progress: number;
   statusMessage: string | null;
@@ -235,6 +237,26 @@ export async function createSlideshowJob(projectId: string, params: SlideshowJob
 export async function getJob(jobId: string): Promise<JobRecord> {
   const { job } = await request<{ job: JobRecord }>(`/jobs/${jobId}`);
   return job;
+}
+
+export type TextToVideoRatio = "1280:720" | "720:1280" | "960:960";
+export type TextToVideoDuration = 4 | 6 | 8;
+
+export interface TextToVideoJobParams {
+  prompt: string;
+  ratio: TextToVideoRatio;
+  duration: TextToVideoDuration;
+}
+
+export async function createTextToVideoJob(
+  projectId: string,
+  params: TextToVideoJobParams
+): Promise<{ job: JobRecord; creditsEstimated: number }> {
+  return request("/jobs", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ projectId, type: "TEXT_TO_VIDEO", params }),
+  });
 }
 
 // A direct, streamable URL for a <video>/<audio>/<img> element to point at.

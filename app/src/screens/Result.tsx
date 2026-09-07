@@ -22,7 +22,7 @@ const EXPORT_FORMATS: { id: "9:16" | "16:9" | "1:1"; label: string }[] = [
 ];
 
 export function Result() {
-  const { go, openSheet, realResultUrl, realProjectId, exportInFormat } = useStore();
+  const { go, openSheet, realResultUrl, realProjectId, realJobType, exportInFormat } = useStore();
   const [playbackError, setPlaybackError] = useState<string | null>(null);
 
   return (
@@ -69,8 +69,8 @@ export function Result() {
           <div className="real-badge" style={{ marginBottom: 8 }}>
             <span className="real-badge-dot" /> Real render, generated just now
           </div>
-          <div className="result-title">Your slideshow</div>
-          <div className="result-meta">Rendered server-side from your uploaded photos</div>
+          <div className="result-title">Your video</div>
+          <div className="result-meta">Rendered server-side just now</div>
         </div>
       ) : (
         <div className="result-header">
@@ -82,15 +82,19 @@ export function Result() {
 
       {realResultUrl && realProjectId ? (
         <>
-          <div className="section-label">Export as</div>
-          <p className="disclaimer-note" style={{ margin: "0 2px 10px" }}>
-            Re-renders your same photos, music and style at a different aspect ratio (uses credits again — it's a real render, not a crop).
-          </p>
-          <div className="style-chip-row">
-            {EXPORT_FORMATS.map((f) => (
-              <Chip key={f.id} onClick={() => exportInFormat(f.id)}>{f.label}</Chip>
-            ))}
-          </div>
+          {realJobType === "SLIDESHOW_VIDEO" && (
+            <>
+              <div className="section-label">Export as</div>
+              <p className="disclaimer-note" style={{ margin: "0 2px 10px" }}>
+                Re-renders your same photos, music and style at a different aspect ratio (uses credits again — it's a real render, not a crop).
+              </p>
+              <div className="style-chip-row">
+                {EXPORT_FORMATS.map((f) => (
+                  <Chip key={f.id} onClick={() => exportInFormat(f.id)}>{f.label}</Chip>
+                ))}
+              </div>
+            </>
+          )}
         </>
       ) : (
         <>
