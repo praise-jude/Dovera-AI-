@@ -38,6 +38,7 @@ export interface SlideshowParams {
   imageAssetIds: string[];
   musicAssetId?: string;
   musicVolume?: number;
+  musicStartSec?: number;
   soundEffects?: { assetId: string; atSec: number; volume?: number }[];
   secondsPerImage?: number;
   durations?: number[];
@@ -211,8 +212,16 @@ export async function runSlideshowJob(jobId: string): Promise<void> {
       if (music) {
         cmd.input(absolutePath(music.storagePath));
         const musicVolume = Math.min(Math.max(params.musicVolume ?? 0.9, 0), 2);
+        // Where in the track playback begins (e.g. skip a quiet intro) —
+        // clamped so a start point near/past the track's own end can't
+        // trim it down to nothing. asetpts resets the clock to 0 after the
+        // cut so the fade timings below (which are relative to the trimmed
+        // clip, not the source file) stay correct.
+        const rawStart = Math.max(0, params.musicStartSec ?? 0);
+        const musicStart = music.durationSec ? Math.min(rawStart, Math.max(0, music.durationSec - 1)) : rawStart;
         filters.push(
-          `[${nextAudioInputIndex}:a]atrim=0:${totalDur.toFixed(2)},afade=t=in:st=0:d=1,` +
+          `[${nextAudioInputIndex}:a]atrim=${musicStart.toFixed(2)}:${(musicStart + totalDur).toFixed(2)},` +
+            `asetpts=PTS-STARTPTS,afade=t=in:st=0:d=1,` +
             `afade=t=out:st=${Math.max(totalDur - 1.5, 0).toFixed(2)}:d=1.5,volume=${musicVolume}[music0]`
         );
         audioLabels.push("music0");

@@ -1599,6 +1599,60 @@ video.player-bg { width: 100%; height: 100%; object-fit: contain; background: #0
 .billing-offer-interval { font-size: 11px; font-weight: 400; color: var(--text-muted); }
 
 /* ==========================================================================
+   Waveform (real decoded audio — tap/drag to set the music start point)
+   ========================================================================== */
+
+.waveform-track {
+  position: relative;
+  height: 56px;
+  border-radius: var(--r-sm);
+  background: var(--surface-raise);
+  border: 1px solid var(--border);
+  touch-action: none;
+  cursor: pointer;
+  overflow: hidden;
+}
+.waveform-bars {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: flex-end;
+  gap: 1.5px;
+  padding: 6px 4px;
+}
+.waveform-bar {
+  flex: 1 1 0;
+  min-width: 1px;
+  background: var(--text-dim);
+  border-radius: 1px;
+}
+.waveform-selection {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: var(--accent-tint);
+  border-left: 1px solid var(--accent-line);
+  border-right: 1px solid var(--accent-line);
+  pointer-events: none;
+}
+.waveform-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--accent);
+  transform: translateX(-1px);
+  pointer-events: none;
+}
+.waveform-caption {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--text-muted);
+  margin: 6px 2px 0;
+}
+
+/* ==========================================================================
    Accessibility
    ========================================================================== */
 

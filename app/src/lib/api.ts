@@ -205,6 +205,7 @@ export interface SlideshowJobParams {
   imageAssetIds: string[];
   musicAssetId?: string;
   musicVolume?: number;
+  musicStartSec?: number;
   soundEffects?: { assetId: string; atSec: number; volume?: number }[];
   secondsPerImage?: number;
   durations?: number[];

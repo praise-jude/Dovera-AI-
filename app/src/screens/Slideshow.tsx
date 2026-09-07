@@ -6,6 +6,8 @@ import * as api from "../lib/api";
 import type { SlideshowStyle, UploadedAsset } from "../lib/api";
 import { detectBeats, beatAlignedDurations, type BeatInfo } from "../lib/beatDetect";
 import { deriveFromPrompt } from "../lib/promptDefaults";
+import { decodeWaveformFromFile, decodeWaveformFromUrl, type WaveformData } from "../lib/waveform";
+import { Waveform } from "../components/Waveform";
 
 const ASPECTS: { id: "9:16" | "16:9" | "1:1"; label: string }[] = [
   { id: "9:16", label: "9:16 Vertical" },
@@ -64,6 +66,9 @@ export function Slideshow() {
   const [beatDetecting, setBeatDetecting] = useState(false);
   const [beatError, setBeatError] = useState<string | null>(null);
   const [musicVolume, setMusicVolume] = useState(0.9);
+  const [musicStartSec, setMusicStartSec] = useState(0);
+  const [waveform, setWaveform] = useState<WaveformData | null>(null);
+  const [waveformLoading, setWaveformLoading] = useState(false);
   const [librarySfx, setLibrarySfx] = useState<UploadedAsset[]>([]);
   const [sfxPickId, setSfxPickId] = useState<string | null>(null);
   const [sfxAtSec, setSfxAtSec] = useState(0);
@@ -107,13 +112,37 @@ export function Slideshow() {
     };
   }, [music]);
 
-  // Beat info is tied to a specific track — clear it whenever the selected
-  // music changes so a stale detection never gets applied to a new song.
+  // Beat info and the trim point are both tied to a specific track — clear
+  // them whenever the selected music changes so stale state never gets
+  // applied to a new song.
   useEffect(() => {
     setBeatInfo(null);
     setBeatError(null);
+    setMusicStartSec(0);
     if (timingMode === "beat") setTimingMode("sync");
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [music, pickedMusicId]);
+
+  // Real waveform, decoded from the actual audio — a fresh upload decodes
+  // the local file directly; a library pick fetches the same authenticated
+  // URL the player uses. Never fabricated: silence renders as a flat line.
+  useEffect(() => {
+    let cancelled = false;
+    setWaveform(null);
+    if (!music && !pickedMusicId) return;
+    setWaveformLoading(true);
+    const task = music
+      ? decodeWaveformFromFile(music)
+      : decodeWaveformFromUrl(api.getAssetFileUrl(pickedMusicId!));
+    task.then((data) => {
+      if (!cancelled) {
+        setWaveform(data);
+        setWaveformLoading(false);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [music, pickedMusicId]);
 
   const musicDurationSec = pickedMusicId
@@ -298,6 +327,32 @@ export function Slideshow() {
 
       {(music || pickedMusicId) && (
         <>
+          <div className="section-label">Music start point</div>
+          {waveformLoading && <p className="disclaimer-note" style={{ margin: "0 2px 8px" }}>Reading the waveform…</p>}
+          {!waveformLoading && waveform && waveform.durationSec > 0 && (
+            <>
+              <Waveform
+                peaks={waveform.peaks}
+                durationSec={waveform.durationSec}
+                trimStartSec={musicStartSec}
+                usedSec={Math.max(1, totalDuration)}
+                onChangeTrimStart={setMusicStartSec}
+              />
+              <div className="waveform-caption">
+                <span>Starts at {formatDuration(musicStartSec)}</span>
+                <span>Track is {formatDuration(waveform.durationSec)}</span>
+              </div>
+              <p className="disclaimer-note" style={{ margin: "8px 2px 0" }}>
+                Drag to skip a quiet intro — the highlighted band is what actually plays.
+              </p>
+            </>
+          )}
+          {!waveformLoading && !waveform && (
+            <p className="disclaimer-note" style={{ margin: "0 2px 16px" }}>
+              Couldn't read this track's waveform — it'll still play from the start.
+            </p>
+          )}
+
           <div className="section-label">Photo timing</div>
           <div className="style-chip-row">
             <Chip selected={timingMode === "manual"} onClick={() => setTimingMode("manual")}>Manual</Chip>
@@ -513,6 +568,7 @@ export function Slideshow() {
             music,
             musicAssetId: pickedMusicId ?? undefined,
             musicVolume: music || pickedMusicId ? musicVolume : undefined,
+            musicStartSec: music || pickedMusicId ? musicStartSec : undefined,
             soundEffects: soundEffects.length
               ? soundEffects.map(({ assetId, atSec }) => ({ assetId, atSec }))
               : undefined,

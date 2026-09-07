@@ -3,6 +3,8 @@ import * as api from "../lib/api";
 import type { AssetCategory, UploadedAsset } from "../lib/api";
 import { Button } from "../components/ui";
 import { IconPlay, IconClose, IconEdit, IconDelete } from "../components/icons";
+import { decodeWaveformFromUrl, type WaveformData } from "../lib/waveform";
+import { Waveform } from "../components/Waveform";
 
 type Tab = "MUSIC" | "SFX" | "FAVORITES";
 
@@ -30,6 +32,7 @@ export function MusicLibrary() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [playingId, setPlayingId] = useState<string | null>(null);
+  const [waveform, setWaveform] = useState<WaveformData | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -70,6 +73,7 @@ export function MusicLibrary() {
     if (playingId === asset.id) {
       audioRef.current?.pause();
       setPlayingId(null);
+      setWaveform(null);
       return;
     }
     const url = api.getAssetFileUrl(asset.id);
@@ -77,6 +81,8 @@ export function MusicLibrary() {
       audioRef.current.src = url;
       await audioRef.current.play();
       setPlayingId(asset.id);
+      setWaveform(null);
+      decodeWaveformFromUrl(url).then((data) => setWaveform(data));
     }
   };
 
@@ -200,7 +206,8 @@ export function MusicLibrary() {
       ) : (
         <div className="library-list">
           {items.map((asset) => (
-            <div key={asset.id} className="library-row">
+            <div key={asset.id}>
+            <div className="library-row">
               <button
                 className="library-play-btn"
                 onClick={() => togglePlay(asset)}
@@ -250,6 +257,12 @@ export function MusicLibrary() {
               >
                 <IconDelete width={14} height={14} />
               </button>
+            </div>
+            {playingId === asset.id && waveform && waveform.durationSec > 0 && (
+              <div style={{ margin: "6px 4px 10px" }}>
+                <Waveform peaks={waveform.peaks} durationSec={waveform.durationSec} interactive={false} />
+              </div>
+            )}
             </div>
           ))}
         </div>

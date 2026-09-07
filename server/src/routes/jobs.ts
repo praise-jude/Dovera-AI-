@@ -22,6 +22,7 @@ const slideshowSchema = z.object({
     imageAssetIds: z.array(z.string()).min(1).max(12),
     musicAssetId: z.string().optional(),
     musicVolume: z.number().min(0).max(2).optional(),
+    musicStartSec: z.number().min(0).max(3600).optional(),
     soundEffects: z
       .array(z.object({ assetId: z.string(), atSec: z.number().min(0), volume: z.number().min(0).max(2).optional() }))
       .max(10)

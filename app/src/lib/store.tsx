@@ -50,6 +50,7 @@ interface Store extends ViewState {
     music: File | null;
     musicAssetId?: string;
     musicVolume?: number;
+    musicStartSec?: number;
     soundEffects?: { assetId: string; atSec: number; volume?: number }[];
     aspectRatio: "9:16" | "16:9" | "1:1";
     style: SlideshowStyle;
@@ -211,6 +212,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       music: File | null;
       musicAssetId?: string;
       musicVolume?: number;
+      musicStartSec?: number;
       soundEffects?: { assetId: string; atSec: number; volume?: number }[];
       aspectRatio: "9:16" | "16:9" | "1:1";
       style: SlideshowStyle;
@@ -267,6 +269,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           imageAssetIds,
           musicAssetId,
           musicVolume: opts.musicVolume,
+          musicStartSec: opts.musicStartSec,
           soundEffects: opts.soundEffects,
           durations: opts.durations,
           aspectRatio: opts.aspectRatio,
