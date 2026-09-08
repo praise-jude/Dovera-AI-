@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState, ty
 import type { Mode, Screen, ViewState } from "./types";
 import * as api from "./api";
 import type { SlideshowStyle } from "./api";
+import { notifyGenerationDone } from "./notifications";
 
 const initialState: ViewState = {
   screen: "home",
@@ -22,6 +23,7 @@ const initialState: ViewState = {
   realJobId: null,
   realJobType: null,
   realProjectId: null,
+  editProjectId: null,
   realPending: false,
   realStatusMessage: null,
   realResultUrl: null,
@@ -45,7 +47,7 @@ interface Store extends ViewState {
   openScene: (id: number) => void;
   startRealSlideshow: (opts: {
     projectName: string;
-    images: File[];
+    photos: SlideshowPhotoInput[];
     durations: number[];
     music: File | null;
     musicAssetId?: string;
@@ -65,8 +67,15 @@ interface Store extends ViewState {
   }) => Promise<void>;
   viewProjectResult: (projectId: string) => Promise<void>;
   exportInFormat: (aspectRatio: "9:16" | "16:9" | "1:1") => Promise<void>;
+  startEditProject: (projectId: string) => void;
+  clearEditProject: () => void;
   clearRealError: () => void;
 }
+
+// A photo to include in a slideshow render — either a fresh file that still
+// needs uploading, or an asset that already exists on the server (from an
+// edited/duplicated project) and just needs its id passed straight through.
+export type SlideshowPhotoInput = { kind: "new"; file: File } | { kind: "existing"; assetId: string };
 
 const StoreCtx = createContext<Store | null>(null);
 
@@ -141,6 +150,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setState((s) => ({ ...s, realError: null, realJobId: null }));
   }, []);
 
+  // Sends Slideshow into "edit" mode for a past project — it reads
+  // editProjectId once on mount, prefills its form from that project's last
+  // completed render, then clears it. Submitting still always creates a
+  // brand-new project, so the original is never touched.
+  const startEditProject = useCallback((projectId: string) => {
+    setState((s) => ({ ...s, editProjectId: projectId, prevScreen: s.screen, screen: "slideshow" }));
+  }, []);
+
+  const clearEditProject = useCallback(() => {
+    setState((s) => ({ ...s, editProjectId: null }));
+  }, []);
+
   // Opens a previously-generated project's video from the Projects screen —
   // no new job, just fetches the existing result asset.
   const viewProjectResult = useCallback(async (projectId: string) => {
@@ -207,7 +228,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const startRealSlideshow = useCallback(
     async (opts: {
       projectName: string;
-      images: File[];
+      photos: SlideshowPhotoInput[];
       durations: number[];
       music: File | null;
       musicAssetId?: string;
@@ -239,10 +260,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         await api.ensureAuth();
         const project = await api.createProject(opts.projectName || "Untitled slideshow");
 
+        // Order matters here — a mix of freshly-uploaded and already-existing
+        // (from an edited project) photos must land in imageAssetIds in the
+        // same order the user arranged them, regardless of which is which.
         const imageAssetIds: string[] = [];
-        for (const file of opts.images) {
-          const asset = await api.uploadAsset(file, { projectId: project.id });
-          imageAssetIds.push(asset.id);
+        for (const photo of opts.photos) {
+          if (photo.kind === "existing") {
+            imageAssetIds.push(photo.assetId);
+          } else {
+            const asset = await api.uploadAsset(photo.file, { projectId: project.id });
+            imageAssetIds.push(asset.id);
+          }
         }
         // A library pick takes priority over a fresh upload if somehow both
         // are present (the UI only ever offers one or the other at a time).
@@ -364,10 +392,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             screen: "result",
             prevScreen: "generating",
           }));
+          void notifyGenerationDone({ success: true, title: "Your video is ready", body: "VIDORA finished generating — tap to view it." });
           return;
         }
         if (job.status === "FAILED") {
           setState((s) => ({ ...s, realError: job.error || "Generation failed. Your project is safe." }));
+          void notifyGenerationDone({ success: false, title: "Generation failed", body: job.error || "Your project is safe — please try again." });
           return;
         }
         setState((s) => ({ ...s, prog: job.progress, realStatusMessage: job.statusMessage }));
@@ -406,6 +436,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     startTextToVideo,
     viewProjectResult,
     exportInFormat,
+    startEditProject,
+    clearEditProject,
     clearRealError,
   };
 

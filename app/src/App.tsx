@@ -1,4 +1,6 @@
+import { useEffect } from "react";
 import { StoreProvider, useStore } from "./lib/store";
+import { primeNotificationPermission } from "./lib/notifications";
 import { Header, TabBar } from "./components/Chrome";
 import { CreditSheet } from "./screens/CreditSheet";
 import { Home } from "./screens/Home";
@@ -55,6 +57,10 @@ function Shell() {
   const ScreenComponent = SCREEN_MAP[screen];
   const chromeless = CHROMELESS.includes(screen);
   const subtitleOverride = screen === "result" && realResultUrl ? "Your video · real render" : undefined;
+
+  useEffect(() => {
+    primeNotificationPermission();
+  }, []);
 
   return (
     <div className="app-root">

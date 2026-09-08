@@ -50,6 +50,7 @@ export interface ViewState {
   realJobId: string | null;
   realJobType: string | null;
   realProjectId: string | null;
+  editProjectId: string | null;
   realPending: boolean;
   realStatusMessage: string | null;
   realResultUrl: string | null;

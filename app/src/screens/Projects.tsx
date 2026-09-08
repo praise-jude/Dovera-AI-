@@ -3,7 +3,7 @@ import { useStore } from "../lib/store";
 import { Placeholder } from "../components/ui";
 import * as api from "../lib/api";
 import type { Project } from "../lib/api";
-import { IconEdit, IconDelete } from "../components/icons";
+import { IconEdit, IconDelete, IconRegenerate } from "../components/icons";
 
 type DisplayStatus = "DRAFT" | "GENERATING" | "COMPLETED" | "FAILED";
 
@@ -34,7 +34,7 @@ const STATUS_CLASS: Record<DisplayStatus, string> = {
 };
 
 export function Projects() {
-  const { viewProjectResult } = useStore();
+  const { viewProjectResult, startEditProject } = useStore();
   const [projects, setProjects] = useState<Project[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [thumbs, setThumbs] = useState<Record<string, string>>({});
@@ -136,6 +136,15 @@ export function Projects() {
                   <span className={`mono status-badge ${STATUS_CLASS[status]}`}>{status}</span>
                 </button>
                 <div className="project-row-actions">
+                  {status === "COMPLETED" && (
+                    <button
+                      className="library-icon-btn"
+                      aria-label={`Edit and regenerate ${p.name}`}
+                      onClick={() => startEditProject(p.id)}
+                    >
+                      <IconRegenerate width={14} height={14} />
+                    </button>
+                  )}
                   <button
                     className="library-icon-btn"
                     aria-label={`Rename ${p.name}`}

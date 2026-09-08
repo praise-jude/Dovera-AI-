@@ -28,6 +28,13 @@ const MAX_DURATION = 10;
 
 type TimingMode = "manual" | "sync" | "beat";
 
+// A photo already on the server (from an edited/duplicated project) doesn't
+// need re-uploading — only a fresh pick does. Keeping both kinds in one
+// ordered list lets you freely add, remove, and reorder a mix of the two.
+type PhotoItem =
+  | { key: string; kind: "new"; file: File }
+  | { key: string; kind: "existing"; assetId: string; url: string };
+
 function formatDuration(sec: number | null): string {
   if (sec == null) return "";
   const m = Math.floor(sec / 60);
@@ -51,11 +58,11 @@ interface AddedSfx {
 }
 
 export function Slideshow() {
-  const { startRealSlideshow } = useStore();
+  const { startRealSlideshow, editProjectId, clearEditProject } = useStore();
   const [idea, setIdea] = useState("");
   const [ideaApplied, setIdeaApplied] = useState(false);
 
-  const [images, setImages] = useState<File[]>([]);
+  const [photos, setPhotos] = useState<PhotoItem[]>([]);
   const [durations, setDurations] = useState<number[]>([]);
   const [music, setMusic] = useState<File | null>(null);
   const [uploadedMusicDuration, setUploadedMusicDuration] = useState<number | null>(null);
@@ -78,6 +85,8 @@ export function Slideshow() {
   const [titleText, setTitleText] = useState("");
   const [endingText, setEndingText] = useState("");
   const [name, setName] = useState("");
+  const [loadingEdit, setLoadingEdit] = useState(false);
+  const [editNotice, setEditNotice] = useState<string | null>(null);
   const imgInputRef = useRef<HTMLInputElement>(null);
   const musicInputRef = useRef<HTMLInputElement>(null);
 
@@ -93,6 +102,71 @@ export function Slideshow() {
       .then(setLibrarySfx)
       .catch(() => {});
   }, []);
+
+  // Prefill everything from a past project's last completed render — this
+  // never touches or re-renders that project; submitting still creates a
+  // brand-new one, so the original stays exactly as it was.
+  useEffect(() => {
+    if (!editProjectId) return;
+    const projectId = editProjectId;
+    clearEditProject();
+    setLoadingEdit(true);
+    (async () => {
+      try {
+        await api.ensureAuth();
+        const project = await api.getProject(projectId);
+        const job = project.jobs?.find((j) => j.type === "SLIDESHOW_VIDEO" && j.status === "COMPLETED");
+        if (!job) {
+          setEditNotice("Couldn't find a finished render to copy from that project.");
+          return;
+        }
+        const params = job.params as api.SlideshowJobParams;
+
+        setName(`${project.name} (copy)`);
+        setPhotos(
+          (params.imageAssetIds ?? []).map((assetId) => ({
+            key: crypto.randomUUID(),
+            kind: "existing" as const,
+            assetId,
+            url: api.getAssetFileUrl(assetId),
+          }))
+        );
+        setDurations(params.durations ?? (params.imageAssetIds ?? []).map(() => DEFAULT_DURATION));
+        setTimingMode("manual");
+        if (params.musicAssetId) {
+          // The music-changed effect below would otherwise immediately
+          // reset the trim point it's about to see set two lines down.
+          skipNextTrimReset.current = true;
+          setPickedMusicId(params.musicAssetId);
+          setMusic(null);
+        }
+        setMusicVolume(params.musicVolume ?? 0.9);
+        setMusicStartSec(params.musicStartSec ?? 0);
+        if (params.aspectRatio) setAspect(params.aspectRatio);
+        if (params.style) setStyle(params.style);
+        if (params.soundEffects?.length) {
+          setSoundEffects(
+            params.soundEffects.map((sfx) => ({
+              assetId: sfx.assetId,
+              atSec: sfx.atSec,
+              filename: librarySfx.find((s) => s.id === sfx.assetId)?.filename ?? "Sound effect",
+            }))
+          );
+        }
+        if (params.captions?.length) {
+          const sorted = [...params.captions].sort((a, b) => a.atSec - b.atSec);
+          setTitleText(sorted[0]?.text ?? "");
+          if (sorted.length > 1) setEndingText(sorted[sorted.length - 1]?.text ?? "");
+        }
+        setEditNotice(`Copied settings from "${project.name}" — change anything, then generate.`);
+      } catch {
+        setEditNotice("Couldn't load that project's settings. Starting from scratch.");
+      } finally {
+        setLoadingEdit(false);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editProjectId]);
 
   // Decode the uploaded music file's real duration client-side (no upload
   // needed yet) so "sync to music" works for a fresh file, not just a saved
@@ -114,11 +188,17 @@ export function Slideshow() {
 
   // Beat info and the trim point are both tied to a specific track — clear
   // them whenever the selected music changes so stale state never gets
-  // applied to a new song.
+  // applied to a new song. (Edit-prefill sets its own trim point above,
+  // right before this would otherwise reset it back to 0 — see guard.)
+  const skipNextTrimReset = useRef(false);
   useEffect(() => {
     setBeatInfo(null);
     setBeatError(null);
-    setMusicStartSec(0);
+    if (skipNextTrimReset.current) {
+      skipNextTrimReset.current = false;
+    } else {
+      setMusicStartSec(0);
+    }
     if (timingMode === "beat") setTimingMode("sync");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [music, pickedMusicId]);
@@ -149,7 +229,7 @@ export function Slideshow() {
     ? libraryMusic.find((m) => m.id === pickedMusicId)?.durationSec ?? null
     : uploadedMusicDuration;
 
-  const canSync = Boolean(musicDurationSec) && images.length > 0;
+  const canSync = Boolean(musicDurationSec) && photos.length > 0;
   const suggestedPhotoCount = musicDurationSec ? Math.max(1, Math.round(musicDurationSec / DEFAULT_DURATION)) : null;
 
   const runBeatDetection = async () => {
@@ -169,20 +249,21 @@ export function Slideshow() {
   };
 
   const addImages = (files: File[]) => {
-    setImages((imgs) => [...imgs, ...files].slice(0, 12));
+    const items: PhotoItem[] = files.map((file) => ({ key: crypto.randomUUID(), kind: "new", file }));
+    setPhotos((ps) => [...ps, ...items].slice(0, 12));
     setDurations((d) => [...d, ...files.map(() => DEFAULT_DURATION)].slice(0, 12));
   };
 
   const removeImage = (i: number) => {
-    setImages((imgs) => imgs.filter((_, idx) => idx !== i));
+    setPhotos((ps) => ps.filter((_, idx) => idx !== i));
     setDurations((d) => d.filter((_, idx) => idx !== i));
   };
 
   const moveImage = (i: number, dir: -1 | 1) => {
     const j = i + dir;
-    if (j < 0 || j >= images.length) return;
-    setImages((imgs) => {
-      const next = [...imgs];
+    if (j < 0 || j >= photos.length) return;
+    setPhotos((ps) => {
+      const next = [...ps];
       [next[i], next[j]] = [next[j], next[i]];
       return next;
     });
@@ -198,9 +279,9 @@ export function Slideshow() {
   };
 
   const surpriseMe = () => {
-    if (images.length === 0) return;
-    const order = shuffle(images.map((_, i) => i));
-    setImages((imgs) => order.map((i) => imgs[i]));
+    if (photos.length === 0) return;
+    const order = shuffle(photos.map((_, i) => i));
+    setPhotos((ps) => order.map((i) => ps[i]));
     setDurations((d) => order.map((i) => d[i] ?? DEFAULT_DURATION));
     setStyle(STYLES[Math.floor(Math.random() * STYLES.length)].id);
     setTimingMode("manual");
@@ -218,14 +299,14 @@ export function Slideshow() {
   };
 
   const effectiveDurations =
-    timingMode === "sync" && musicDurationSec && images.length > 0
-      ? images.map(() => Math.max(MIN_DURATION, Math.min(MAX_DURATION, musicDurationSec / images.length)))
-      : timingMode === "beat" && beatInfo && images.length > 0
-        ? beatAlignedDurations(images.length, beatInfo, musicDurationSec ?? durations.reduce((a, b) => a + b, 0), MIN_DURATION, MAX_DURATION)
+    timingMode === "sync" && musicDurationSec && photos.length > 0
+      ? photos.map(() => Math.max(MIN_DURATION, Math.min(MAX_DURATION, musicDurationSec / photos.length)))
+      : timingMode === "beat" && beatInfo && photos.length > 0
+        ? beatAlignedDurations(photos.length, beatInfo, musicDurationSec ?? durations.reduce((a, b) => a + b, 0), MIN_DURATION, MAX_DURATION)
         : durations;
 
   const totalDuration = effectiveDurations.reduce((a, b) => a + b, 0);
-  const canGenerate = images.length > 0;
+  const canGenerate = photos.length > 0;
 
   return (
     <div className="screen slideshow-screen vup">
@@ -237,6 +318,11 @@ export function Slideshow() {
         Upload your own photos (and optionally your own music) and VIDORA assembles a real slideshow
         video — no placeholder, no simulation.
       </p>
+
+      {loadingEdit && <p className="disclaimer-note" style={{ margin: "0 2px 16px" }}>Loading that project's settings…</p>}
+      {editNotice && !loadingEdit && (
+        <p className="disclaimer-note" style={{ margin: "0 2px 16px", color: "var(--accent)" }}>{editNotice}</p>
+      )}
 
       <div className="section-label" style={{ marginTop: 0 }}>Idea (optional)</div>
       <input
@@ -318,7 +404,7 @@ export function Slideshow() {
         }}
       />
 
-      {musicDurationSec != null && images.length === 0 && (
+      {musicDurationSec != null && photos.length === 0 && (
         <p className="disclaimer-note" style={{ margin: "10px 2px 0" }}>
           {formatDuration(musicDurationSec)} track — try around {suggestedPhotoCount} photo
           {suggestedPhotoCount === 1 ? "" : "s"} for a good pace (about {DEFAULT_DURATION}s each).
@@ -369,8 +455,8 @@ export function Slideshow() {
           </div>
           {timingMode === "sync" && musicDurationSec != null && (
             <p className="disclaimer-note" style={{ margin: "8px 2px 0" }}>
-              Splits {formatDuration(musicDurationSec)} evenly across {images.length || "your"} photo
-              {images.length === 1 ? "" : "s"}.
+              Splits {formatDuration(musicDurationSec)} evenly across {photos.length || "your"} photo
+              {photos.length === 1 ? "" : "s"}.
             </p>
           )}
           {timingMode === "beat" && beatInfo && (
@@ -459,14 +545,18 @@ export function Slideshow() {
       )}
 
       <div className="section-label">
-        Photos {images.length > 0 && <span className="mono">· {totalDuration.toFixed(1)}s total</span>}
+        Photos {photos.length > 0 && <span className="mono">· {totalDuration.toFixed(1)}s total</span>}
       </div>
 
-      {images.length > 0 && (
+      {photos.length > 0 && (
         <div className="slideshow-photo-list">
-          {images.map((file, i) => (
-            <div key={i} className="slideshow-photo-row">
-              <img className="slideshow-photo-row-thumb" src={URL.createObjectURL(file)} alt={`Photo ${i + 1}`} />
+          {photos.map((photo, i) => (
+            <div key={photo.key} className="slideshow-photo-row">
+              <img
+                className="slideshow-photo-row-thumb"
+                src={photo.kind === "new" ? URL.createObjectURL(photo.file) : photo.url}
+                alt={`Photo ${i + 1}`}
+              />
               <div className="slideshow-photo-row-info">
                 <span className="mono slideshow-photo-row-num">{String(i + 1).padStart(2, "0")}</span>
                 {timingMode === "manual" ? (
@@ -483,7 +573,7 @@ export function Slideshow() {
               </div>
               <div className="slideshow-photo-row-actions">
                 <button disabled={i === 0} onClick={() => moveImage(i, -1)} aria-label={`Move photo ${i + 1} up`}>▲</button>
-                <button disabled={i === images.length - 1} onClick={() => moveImage(i, 1)} aria-label={`Move photo ${i + 1} down`}>▼</button>
+                <button disabled={i === photos.length - 1} onClick={() => moveImage(i, 1)} aria-label={`Move photo ${i + 1} down`}>▼</button>
                 <button onClick={() => removeImage(i)} aria-label={`Remove photo ${i + 1}`}>
                   <IconClose width={13} height={13} />
                 </button>
@@ -493,8 +583,8 @@ export function Slideshow() {
         </div>
       )}
 
-      {images.length < 12 && (
-        <button className="add-scene-btn" style={{ marginTop: images.length > 0 ? 10 : 0 }} onClick={() => imgInputRef.current?.click()}>
+      {photos.length < 12 && (
+        <button className="add-scene-btn" style={{ marginTop: photos.length > 0 ? 10 : 0 }} onClick={() => imgInputRef.current?.click()}>
           + Add photos
         </button>
       )}
@@ -511,7 +601,7 @@ export function Slideshow() {
         }}
       />
 
-      {images.length > 1 && (
+      {photos.length > 1 && (
         <Button variant="secondary" full onClick={surpriseMe} style={{ marginTop: 10 }}>
           🎲 Surprise me — shuffle order &amp; style
         </Button>
@@ -563,10 +653,10 @@ export function Slideshow() {
         onClick={() =>
           startRealSlideshow({
             projectName: name,
-            images,
+            photos: photos.map((p) => (p.kind === "new" ? { kind: "new", file: p.file } : { kind: "existing", assetId: p.assetId })),
             durations: effectiveDurations,
-            music,
             musicAssetId: pickedMusicId ?? undefined,
+            music,
             musicVolume: music || pickedMusicId ? musicVolume : undefined,
             musicStartSec: music || pickedMusicId ? musicStartSec : undefined,
             soundEffects: soundEffects.length
@@ -579,7 +669,7 @@ export function Slideshow() {
           })
         }
       >
-        {canGenerate ? `Generate real video (${images.length} photo${images.length === 1 ? "" : "s"})` : "Add at least one photo"}
+        {canGenerate ? `Generate real video (${photos.length} photo${photos.length === 1 ? "" : "s"})` : "Add at least one photo"}
       </Button>
     </div>
   );

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useStore } from "../lib/store";
-import { Chip, Placeholder } from "../components/ui";
+import { Button, Chip, Placeholder } from "../components/ui";
 import { IconPlay } from "../components/icons";
 
 const FINISH = [
@@ -22,7 +22,7 @@ const EXPORT_FORMATS: { id: "9:16" | "16:9" | "1:1"; label: string }[] = [
 ];
 
 export function Result() {
-  const { go, openSheet, realResultUrl, realProjectId, realJobType, exportInFormat } = useStore();
+  const { go, openSheet, realResultUrl, realProjectId, realJobType, exportInFormat, startEditProject } = useStore();
   const [playbackError, setPlaybackError] = useState<string | null>(null);
 
   return (
@@ -88,11 +88,17 @@ export function Result() {
               <p className="disclaimer-note" style={{ margin: "0 2px 10px" }}>
                 Re-renders your same photos, music and style at a different aspect ratio (uses credits again — it's a real render, not a crop).
               </p>
-              <div className="style-chip-row">
+              <div className="style-chip-row" style={{ marginBottom: 14 }}>
                 {EXPORT_FORMATS.map((f) => (
                   <Chip key={f.id} onClick={() => exportInFormat(f.id)}>{f.label}</Chip>
                 ))}
               </div>
+              <Button variant="secondary" full onClick={() => startEditProject(realProjectId)}>
+                ✎ Edit &amp; regenerate
+              </Button>
+              <p className="disclaimer-note" style={{ margin: "6px 2px 0" }}>
+                Reopens these photos, music and style so you can change something — the original stays untouched.
+              </p>
             </>
           )}
         </>
