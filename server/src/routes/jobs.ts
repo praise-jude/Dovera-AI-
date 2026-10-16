@@ -5,6 +5,7 @@ import { requireAuth, type AuthedRequest } from "../lib/auth.js";
 import { runSlideshowJob } from "../worker/slideshow.js";
 import { runTextToVideoJob } from "../worker/textToVideo.js";
 import { isRunwayConfigured } from "../lib/runway.js";
+import { waitUntil } from "@vercel/functions";
 
 export const jobsRouter = Router();
 jobsRouter.use(requireAuth);
@@ -87,11 +88,17 @@ jobsRouter.post("/", async (req: AuthedRequest, res) => {
     },
   });
 
-  // Fire-and-forget: the HTTP response returns immediately with the job id;
-  // the client polls GET /jobs/:id for status. On completion we deduct
-  // creditsEstimated from the user; on failure we deduct nothing.
+  // The HTTP response returns immediately with the job id; the client polls
+  // GET /jobs/:id for status. On completion we deduct creditsEstimated from
+  // the user; on failure we deduct nothing.
+  //
+  // This continues running AFTER the response is sent, which on Vercel's
+  // serverless runtime requires waitUntil() — a bare un-awaited promise gets
+  // frozen/killed the moment the handler returns, since nothing tells the
+  // platform the invocation isn't really done yet. waitUntil extends the
+  // invocation's lifetime (up to the function's own maxDuration) to cover it.
   const run = type === "SLIDESHOW_VIDEO" ? runSlideshowJob : runTextToVideoJob;
-  void run(job.id).then(async () => {
+  const jobPromise = run(job.id).then(async () => {
     const finished = await db.job.findUnique({ where: { id: job.id } });
     if (finished?.status === "COMPLETED" && finished.creditsCharged > 0) {
       await db.user.update({
@@ -100,6 +107,7 @@ jobsRouter.post("/", async (req: AuthedRequest, res) => {
       });
     }
   });
+  waitUntil(jobPromise);
 
   res.status(202).json({ job, creditsEstimated: estimate });
 });

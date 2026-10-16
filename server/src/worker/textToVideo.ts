@@ -1,11 +1,11 @@
 import ffmpegPath from "@ffmpeg-installer/ffmpeg";
 import ffmpeg from "fluent-ffmpeg";
 import { randomUUID } from "node:crypto";
-import { chmod, mkdtemp, readFile, rm, stat as fsStat, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { db } from "../db.js";
-import { ensureUserDir, storagePathFor } from "../lib/storage.js";
+import { saveFile, storagePathFor, uploadLocalFile } from "../lib/storage.js";
 import { createTextToVideoTask, getTask, RunwayError, type RunwayDuration, type RunwayRatio } from "../lib/runway.js";
 
 ffmpeg.setFfmpegPath(ffmpegPath.path);
@@ -22,7 +22,12 @@ async function setJob(jobId: string, data: Parameters<typeof db.job.update>[0]["
 }
 
 const POLL_INTERVAL_MS = 4000;
-const MAX_WAIT_MS = 8 * 60 * 1000; // Runway generations typically finish in under a couple of minutes
+// Clamped to fit inside a single Vercel Function invocation (300s on Hobby,
+// configurable up to 800s on Pro) with headroom left for downloading the
+// result, generating a thumbnail, and uploading both — not just the Runway
+// wait itself. Raise this (and the function's maxDuration) together if
+// upgrading past Hobby.
+const MAX_WAIT_MS = 260 * 1000;
 
 class UserFacingError extends Error {}
 
@@ -73,10 +78,9 @@ export async function runTextToVideoJob(jobId: string): Promise<void> {
     if (!videoRes.ok) throw new UserFacingError("Couldn't download the generated video from Runway.");
     const videoBuffer = Buffer.from(await videoRes.arrayBuffer());
 
-    const dir = await ensureUserDir(job.project.userId);
     const finalFilename = `${randomUUID()}.mp4`;
-    await writeFile(join(dir, finalFilename), videoBuffer);
-    const stat = await fsStat(join(dir, finalFilename));
+    const finalStoragePath = storagePathFor(job.project.userId, finalFilename);
+    const { size: finalSize } = await saveFile(finalStoragePath, videoBuffer, "video/mp4");
 
     const resultAsset = await db.asset.create({
       data: {
@@ -84,9 +88,9 @@ export async function runTextToVideoJob(jobId: string): Promise<void> {
         projectId: job.projectId,
         kind: "VIDEO",
         filename: `${job.project.name}.mp4`,
-        storagePath: storagePathFor(job.project.userId, finalFilename),
+        storagePath: finalStoragePath,
         mimeType: "video/mp4",
-        sizeBytes: stat.size,
+        sizeBytes: finalSize,
         durationSec: params.duration,
       },
     });
@@ -107,18 +111,18 @@ export async function runTextToVideoJob(jobId: string): Promise<void> {
           .on("error", (err) => reject(err))
           .run();
       });
-      const thumbStat = await fsStat(thumbPath);
       const thumbFilename = `${randomUUID()}.jpg`;
-      await writeFile(join(dir, thumbFilename), await readFile(thumbPath));
+      const thumbStoragePath = storagePathFor(job.project.userId, thumbFilename);
+      const { size: thumbSize } = await uploadLocalFile(thumbStoragePath, thumbPath, "image/jpeg");
       const thumbAsset = await db.asset.create({
         data: {
           userId: job.project.userId,
           projectId: job.projectId,
           kind: "IMAGE",
           filename: `${job.project.name} thumbnail.jpg`,
-          storagePath: storagePathFor(job.project.userId, thumbFilename),
+          storagePath: thumbStoragePath,
           mimeType: "image/jpeg",
-          sizeBytes: thumbStat.size,
+          sizeBytes: thumbSize,
         },
       });
       thumbnailAssetId = thumbAsset.id;

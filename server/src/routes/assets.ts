@@ -2,12 +2,12 @@ import { Router } from "express";
 import multer from "multer";
 import { randomUUID } from "node:crypto";
 import { extname, join } from "node:path";
-import { createReadStream } from "node:fs";
-import { stat, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { z } from "zod";
 import { db } from "../db.js";
 import { requireAuth, type AuthedRequest } from "../lib/auth.js";
-import { absolutePath, ensureUserDir, storagePathFor } from "../lib/storage.js";
+import { deleteFile, readFile, saveFile, storagePathFor } from "../lib/storage.js";
 import { probeDurationSeconds } from "../lib/media.js";
 import type { AssetCategory, AssetKind } from "@prisma/client";
 
@@ -72,13 +72,25 @@ assetsRouter.post("/", upload.single("file"), async (req: AuthedRequest, res) =>
     }
   }
 
-  const dir = await ensureUserDir(req.userId!);
   const filename = `${randomUUID()}${extname(file.originalname) || ""}`;
   const storagePath = storagePathFor(req.userId!, filename);
-  const diskPath = join(dir, filename);
-  await writeFile(diskPath, file.buffer);
 
-  const durationSec = kind === "AUDIO" || kind === "VIDEO" ? await probeDurationSeconds(diskPath) : null;
+  // ffprobe needs a real file path, so the upload briefly touches local
+  // /tmp disk just for duration detection — the asset itself lives in Blob
+  // storage, never on this (ephemeral, per-invocation) disk.
+  let durationSec: number | null = null;
+  if (kind === "AUDIO" || kind === "VIDEO") {
+    const workDir = await mkdtemp(join(tmpdir(), "vidora-probe-"));
+    try {
+      const tempPath = join(workDir, filename);
+      await writeFile(tempPath, file.buffer);
+      durationSec = await probeDurationSeconds(tempPath);
+    } finally {
+      await rm(workDir, { recursive: true, force: true }).catch(() => {});
+    }
+  }
+
+  await saveFile(storagePath, file.buffer, file.mimetype);
 
   const asset = await db.asset.create({
     data: {
@@ -159,37 +171,24 @@ assetsRouter.get("/:id/file", async (req: AuthedRequest, res) => {
     res.status(404).json({ error: "Asset not found." });
     return;
   }
-  const path = absolutePath(asset.storagePath);
-  try {
-    const s = await stat(path);
-    res.setHeader("Content-Type", asset.mimeType);
-    res.setHeader("Accept-Ranges", "bytes");
-
-    // Range support is required, not optional, for <video>/<audio> playback
-    // in most mobile browsers (always on iOS Safari, frequently on Android
-    // WebView too) — without it some players refuse to play at all rather
-    // than falling back to a full download.
-    const range = req.headers.range;
-    if (range) {
-      const match = /^bytes=(\d*)-(\d*)$/.exec(range);
-      const start = match?.[1] ? parseInt(match[1], 10) : 0;
-      const end = match?.[2] ? parseInt(match[2], 10) : s.size - 1;
-      if (Number.isNaN(start) || Number.isNaN(end) || start > end || end >= s.size) {
-        res.status(416).setHeader("Content-Range", `bytes */${s.size}`).end();
-        return;
-      }
-      res.status(206);
-      res.setHeader("Content-Range", `bytes ${start}-${end}/${s.size}`);
-      res.setHeader("Content-Length", String(end - start + 1));
-      createReadStream(path, { start, end }).pipe(res);
-      return;
-    }
-
-    res.setHeader("Content-Length", String(s.size));
-    createReadStream(path).pipe(res);
-  } catch {
+  // Range support is required, not optional, for <video>/<audio> playback in
+  // most mobile browsers (always on iOS Safari, frequently on Android
+  // WebView too) — without it some players refuse to play at all rather than
+  // falling back to a full download. Forwarded straight to Blob storage,
+  // which honors it the same way the old disk-backed route did.
+  const result = await readFile(asset.storagePath, req.headers.range);
+  if (!result) {
     res.status(404).json({ error: "File is missing from storage." });
+    return;
   }
+  res.status(result.status);
+  res.setHeader("Content-Type", asset.mimeType);
+  res.setHeader("Accept-Ranges", "bytes");
+  if (result.contentRange) res.setHeader("Content-Range", result.contentRange);
+  if (result.contentLength) res.setHeader("Content-Length", result.contentLength);
+
+  const { Readable } = await import("node:stream");
+  Readable.fromWeb(result.stream as import("node:stream/web").ReadableStream).pipe(res);
 });
 
 assetsRouter.delete("/:id", async (req: AuthedRequest, res) => {
@@ -199,5 +198,6 @@ assetsRouter.delete("/:id", async (req: AuthedRequest, res) => {
     return;
   }
   await db.asset.delete({ where: { id: asset.id } });
+  await deleteFile(asset.storagePath);
   res.status(204).end();
 });

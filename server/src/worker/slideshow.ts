@@ -4,9 +4,9 @@ import { randomUUID } from "node:crypto";
 import { chmod, mkdtemp, rm } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, extname, join } from "node:path";
 import { db } from "../db.js";
-import { absolutePath, ensureUserDir, storagePathFor } from "../lib/storage.js";
+import { downloadToLocalFile, storagePathFor, uploadLocalFile } from "../lib/storage.js";
 
 ffmpeg.setFfmpegPath(ffmpegPath.path);
 // The npm-vendored binary's postinstall (chmod +x) is gated by an
@@ -133,6 +133,26 @@ export async function runSlideshowJob(jobId: string): Promise<void> {
     const user = await db.user.findUnique({ where: { id: job.project.userId } });
     const needsWatermark = user?.plan !== "PREMIUM";
 
+    // FFmpeg's multi-input filter graph needs real local file paths, so
+    // every source asset is pulled from Blob storage into this job's temp
+    // dir up front. Keyed by asset id so each reference below (image, music,
+    // sfx) just does a map lookup instead of downloading twice.
+    await setJob(jobId, { progress: 10, statusMessage: "Fetching your media" });
+    const localPathForAssetId = new Map<string, string>();
+    const assetsToFetch = [
+      ...orderedImages.map((a) => ({ id: a.id, storagePath: a.storagePath })),
+      ...(music ? [{ id: music.id, storagePath: music.storagePath }] : []),
+      ...soundEffects.map((s) => ({ id: s.asset.id, storagePath: s.asset.storagePath })),
+    ];
+    await Promise.all(
+      assetsToFetch.map(async (a) => {
+        if (localPathForAssetId.has(a.id)) return;
+        const localPath = join(workDir, `in-${a.id}${extname(a.storagePath) || ""}`);
+        await downloadToLocalFile(a.storagePath, localPath);
+        localPathForAssetId.set(a.id, localPath);
+      })
+    );
+
     const size = ASPECT_SIZE[params.aspectRatio ?? "9:16"] ?? ASPECT_SIZE["9:16"];
     const style = params.style ?? "kenburns";
     const fallbackSec = Math.min(Math.max(params.secondsPerImage ?? 3, 1.5), 8);
@@ -151,7 +171,7 @@ export async function runSlideshowJob(jobId: string): Promise<void> {
     const filters: string[] = [];
 
     orderedImages.forEach((img, i) => {
-      inputs.push(absolutePath(img.storagePath));
+      inputs.push(localPathForAssetId.get(img.id)!);
       const clipDur = clipDurations[i];
       const frames = Math.round(clipDur * FPS);
       filters.push(`[${i}:v]${styleFilterChain(style, size.w, size.h, frames, clipDur)}[v${i}]`);
@@ -210,7 +230,7 @@ export async function runSlideshowJob(jobId: string): Promise<void> {
       let nextAudioInputIndex = inputs.length;
 
       if (music) {
-        cmd.input(absolutePath(music.storagePath));
+        cmd.input(localPathForAssetId.get(music.id)!);
         const musicVolume = Math.min(Math.max(params.musicVolume ?? 0.9, 0), 2);
         // Where in the track playback begins (e.g. skip a quiet intro) —
         // clamped so a start point near/past the track's own end can't
@@ -229,7 +249,7 @@ export async function runSlideshowJob(jobId: string): Promise<void> {
       }
 
       soundEffects.forEach((sfx, i) => {
-        cmd.input(absolutePath(sfx.asset.storagePath));
+        cmd.input(localPathForAssetId.get(sfx.asset.id)!);
         const atMs = Math.max(0, Math.round(sfx.atSec * 1000));
         const vol = Math.min(Math.max(sfx.volume ?? 1, 0), 2);
         const label = `sfx${i}`;
@@ -275,11 +295,9 @@ export async function runSlideshowJob(jobId: string): Promise<void> {
 
     await setJob(jobId, { status: "EXPORTING", progress: 96, statusMessage: "Saving your video" });
 
-    const dir = await ensureUserDir(job.project.userId);
     const finalFilename = `${randomUUID()}.mp4`;
-    const { copyFile, stat: fsStat } = await import("node:fs/promises");
-    await copyFile(outputPath, join(dir, finalFilename));
-    const stat = await fsStat(join(dir, finalFilename));
+    const finalStoragePath = storagePathFor(job.project.userId, finalFilename);
+    const { size: finalSize } = await uploadLocalFile(finalStoragePath, outputPath, "video/mp4");
 
     const resultAsset = await db.asset.create({
       data: {
@@ -287,9 +305,9 @@ export async function runSlideshowJob(jobId: string): Promise<void> {
         projectId: job.projectId,
         kind: "VIDEO",
         filename: `${job.project.name}.mp4`,
-        storagePath: storagePathFor(job.project.userId, finalFilename),
+        storagePath: finalStoragePath,
         mimeType: "video/mp4",
-        sizeBytes: stat.size,
+        sizeBytes: finalSize,
         durationSec: totalDur,
       },
     });
@@ -308,19 +326,18 @@ export async function runSlideshowJob(jobId: string): Promise<void> {
           .on("error", (err) => reject(err))
           .run();
       });
-      const thumbStat = await fsStat(thumbPath);
       const thumbFilename = `${randomUUID()}.jpg`;
-      const { readFile, writeFile } = await import("node:fs/promises");
-      await writeFile(join(dir, thumbFilename), await readFile(thumbPath));
+      const thumbStoragePath = storagePathFor(job.project.userId, thumbFilename);
+      const { size: thumbSize } = await uploadLocalFile(thumbStoragePath, thumbPath, "image/jpeg");
       const thumbAsset = await db.asset.create({
         data: {
           userId: job.project.userId,
           projectId: job.projectId,
           kind: "IMAGE",
           filename: `${job.project.name} thumbnail.jpg`,
-          storagePath: storagePathFor(job.project.userId, thumbFilename),
+          storagePath: thumbStoragePath,
           mimeType: "image/jpeg",
-          sizeBytes: thumbStat.size,
+          sizeBytes: thumbSize,
         },
       });
       thumbnailAssetId = thumbAsset.id;

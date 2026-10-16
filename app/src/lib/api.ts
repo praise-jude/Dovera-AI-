@@ -1,4 +1,4 @@
-const API_BASE = import.meta.env.VITE_API_BASE || "https://vidora-api-production-165d.up.railway.app";
+const API_BASE = import.meta.env.VITE_API_BASE || "https://vidora-api.vercel.app";
 
 const TOKEN_KEY = "vidora_token";
 
