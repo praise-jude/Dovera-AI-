@@ -5,23 +5,25 @@ import * as api from "../lib/api";
 import type { TextToVideoDuration, TextToVideoRatio } from "../lib/api";
 
 const RATIOS: { id: TextToVideoRatio; label: string }[] = [
-  { id: "720:1280", label: "9:16 Vertical" },
-  { id: "1280:720", label: "16:9 Landscape" },
-  { id: "960:960", label: "1:1 Square" },
+  { id: "9:16", label: "9:16 Vertical" },
+  { id: "16:9", label: "16:9 Landscape" },
+  { id: "1:1", label: "1:1 Square" },
 ];
 
-const DURATIONS: TextToVideoDuration[] = [4, 6, 8];
+const DURATIONS: TextToVideoDuration[] = [5, 10];
 const CREDITS_PER_SECOND = 5;
+
+type ActiveProvider = "fal" | "runway" | null;
 
 export function PromptVideo() {
   const { startTextToVideo } = useStore();
   const [checking, setChecking] = useState(true);
-  const [configured, setConfigured] = useState(false);
+  const [activeProvider, setActiveProvider] = useState<ActiveProvider>(null);
   const [providerError, setProviderError] = useState<string | null>(null);
 
   const [prompt, setPrompt] = useState("");
-  const [ratio, setRatio] = useState<TextToVideoRatio>("720:1280");
-  const [duration, setDuration] = useState<TextToVideoDuration>(4);
+  const [ratio, setRatio] = useState<TextToVideoRatio>("9:16");
+  const [duration, setDuration] = useState<TextToVideoDuration>(5);
   const [name, setName] = useState("");
 
   useEffect(() => {
@@ -29,20 +31,28 @@ export function PromptVideo() {
       .ensureAuth()
       .then(() => api.listProviders())
       .then((providers) => {
+        // fal is preferred when both are configured — cheaper per second
+        // and has a small one-time free trial credit on signup, same
+        // preference order the backend worker uses.
+        const fal = providers.find((p) => p.capability === "TEXT_TO_VIDEO" && p.name === "fal");
         const runway = providers.find((p) => p.capability === "TEXT_TO_VIDEO" && p.name === "runway");
-        setConfigured(Boolean(runway?.configured));
+        setActiveProvider(fal?.configured ? "fal" : runway?.configured ? "runway" : null);
       })
       .catch(() => setProviderError("Couldn't check whether this is set up yet. Please try again."))
       .finally(() => setChecking(false));
   }, []);
 
+  const configured = activeProvider !== null;
   const cost = duration * CREDITS_PER_SECOND;
   const canGenerate = configured && prompt.trim().length >= 3;
 
   return (
     <div className="screen slideshow-screen vup">
       <div className="real-badge">
-        <span className="real-badge-dot" /> Real AI generation — sent to Runway's video model, not simulated
+        <span className="real-badge-dot" />
+        {activeProvider === "fal"
+          ? "Real AI generation — sent to fal.ai (Wan 2.5), not simulated"
+          : "Real AI generation — sent to an external video model, not simulated"}
       </div>
 
       <p className="disclaimer-note" style={{ margin: "10px 2px 16px" }}>
@@ -52,8 +62,8 @@ export function PromptVideo() {
 
       {!checking && !configured && (
         <div className="disclaimer-note" style={{ margin: "0 2px 16px", color: "var(--warn)" }}>
-          Not set up yet on this server — it needs a funded Runway API key added first. Everything
-          below is real and ready to go the moment that's configured; nothing here is a mockup.
+          Not set up yet on this server — it needs a funded API key (fal.ai or Runway) added first.
+          Everything below is real and ready to go the moment that's configured; nothing here is a mockup.
         </div>
       )}
       {providerError && (

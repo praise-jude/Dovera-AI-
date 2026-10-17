@@ -240,8 +240,8 @@ export async function getJob(jobId: string): Promise<JobRecord> {
   return job;
 }
 
-export type TextToVideoRatio = "1280:720" | "720:1280" | "960:960";
-export type TextToVideoDuration = 4 | 6 | 8;
+export type TextToVideoRatio = "9:16" | "16:9" | "1:1";
+export type TextToVideoDuration = number;
 
 export interface TextToVideoJobParams {
   prompt: string;

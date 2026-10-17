@@ -5,15 +5,17 @@ import { requireAuth, type AuthedRequest } from "../lib/auth.js";
 import { runSlideshowJob } from "../worker/slideshow.js";
 import { runTextToVideoJob } from "../worker/textToVideo.js";
 import { isRunwayConfigured } from "../lib/runway.js";
+import { isFalConfigured } from "../lib/fal.js";
 import { waitUntil } from "@vercel/functions";
 
 export const jobsRouter = Router();
 jobsRouter.use(requireAuth);
 
 const CREDITS_PER_SLIDESHOW = 5;
-// Runway's Gen-4 Turbo costs $0.05/real-second — these charge roughly the
-// same $-per-credit rate as the rest of the app rather than a flat number,
-// so a 4s/6s/8s clip visibly costs more the longer it runs.
+// Runway's Gen-4 Turbo and fal.ai's Wan 2.5 (at its cheapest 480p tier) both
+// cost about $0.05/real-second — these charge roughly the same $-per-credit
+// rate as the rest of the app rather than a flat number, so a longer clip
+// visibly costs more credits.
 const CREDITS_PER_T2V_SECOND = 5;
 
 const slideshowSchema = z.object({
@@ -44,8 +46,10 @@ const textToVideoSchema = z.object({
   type: z.literal("TEXT_TO_VIDEO"),
   params: z.object({
     prompt: z.string().min(3).max(1000),
-    ratio: z.enum(["1280:720", "720:1280", "960:960"]),
-    duration: z.union([z.literal(4), z.literal(6), z.literal(8)]),
+    // Provider-agnostic ratio/duration — the worker snaps these to whichever
+    // grid the active provider (fal or Runway) actually accepts.
+    ratio: z.enum(["9:16", "16:9", "1:1"]),
+    duration: z.number().min(4).max(10),
   }),
 });
 
@@ -59,7 +63,7 @@ jobsRouter.post("/", async (req: AuthedRequest, res) => {
   }
   const { projectId, type, params } = parsed.data;
 
-  if (type === "TEXT_TO_VIDEO" && !isRunwayConfigured()) {
+  if (type === "TEXT_TO_VIDEO" && !isFalConfigured() && !isRunwayConfigured()) {
     res.status(503).json({ error: "AI text-to-video isn't configured on this server yet. Please try again shortly." });
     return;
   }
@@ -81,7 +85,7 @@ jobsRouter.post("/", async (req: AuthedRequest, res) => {
     data: {
       projectId,
       type,
-      provider: type === "SLIDESHOW_VIDEO" ? "ffmpeg-local" : "runway",
+      provider: type === "SLIDESHOW_VIDEO" ? "ffmpeg-local" : isFalConfigured() ? "fal" : "runway",
       status: "QUEUED",
       params: params as object,
       creditsEstimated: estimate,

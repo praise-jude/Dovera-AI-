@@ -24,10 +24,10 @@ const REGISTRY = [
   },
   {
     capability: "TEXT_TO_VIDEO",
-    name: "luma",
-    configured: Boolean(process.env.LUMA_API_KEY),
+    name: "fal",
+    configured: Boolean(process.env.FAL_KEY),
     kind: "ai-generative",
-    description: "Neural text-to-video. Requires LUMA_API_KEY.",
+    description: "Neural text-to-video via fal.ai (Wan 2.5) — cheaper per-second than Runway, and fal gives new accounts a small one-time free credit. Preferred over Runway when both are configured. Requires FAL_KEY.",
   },
   {
     capability: "VOICE",
