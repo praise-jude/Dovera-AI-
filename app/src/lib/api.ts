@@ -83,7 +83,7 @@ export interface JobSummary {
   status: "QUEUED" | "ANALYZING" | "GENERATING" | "PROCESSING" | "ADDING_AUDIO" | "RENDERING" | "EXPORTING" | "COMPLETED" | "FAILED" | "CANCELLED";
   resultAssetId: string | null;
   thumbnailAssetId: string | null;
-  params: SlideshowJobParams | TextToVideoJobParams;
+  params: SlideshowJobParams | TextToVideoJobParams | ImageToVideoJobParams;
   createdAt: string;
 }
 
@@ -225,6 +225,7 @@ export interface JobRecord {
   thumbnailAssetId: string | null;
   creditsEstimated: number;
   creditsCharged: number;
+  params?: SlideshowJobParams | TextToVideoJobParams | ImageToVideoJobParams;
 }
 
 export async function createSlideshowJob(projectId: string, params: SlideshowJobParams): Promise<{ job: JobRecord; creditsEstimated: number }> {
@@ -242,11 +243,27 @@ export async function getJob(jobId: string): Promise<JobRecord> {
 
 export type TextToVideoRatio = "9:16" | "16:9" | "1:1";
 export type TextToVideoDuration = number;
+export type AiVideoResolution = "480p" | "720p" | "1080p";
 
-export interface TextToVideoJobParams {
+interface AiVideoCommonParams {
   prompt: string;
-  ratio: TextToVideoRatio;
+  negativePrompt?: string;
   duration: TextToVideoDuration;
+  resolution?: AiVideoResolution;
+  seed?: number;
+  // Response-only: filled in by the worker once a job completes — fal's own
+  // rewritten prompt and the seed it actually used, not something the
+  // client ever sends.
+  expandedPrompt?: string;
+  resultSeed?: number;
+}
+
+export interface TextToVideoJobParams extends AiVideoCommonParams {
+  ratio: TextToVideoRatio;
+}
+
+export interface ImageToVideoJobParams extends AiVideoCommonParams {
+  imageAssetId: string;
 }
 
 export async function createTextToVideoJob(
@@ -257,6 +274,17 @@ export async function createTextToVideoJob(
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ projectId, type: "TEXT_TO_VIDEO", params }),
+  });
+}
+
+export async function createImageToVideoJob(
+  projectId: string,
+  params: ImageToVideoJobParams
+): Promise<{ job: JobRecord; creditsEstimated: number }> {
+  return request("/jobs", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ projectId, type: "IMAGE_TO_VIDEO", params }),
   });
 }
 

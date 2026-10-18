@@ -54,5 +54,7 @@ export interface ViewState {
   realPending: boolean;
   realStatusMessage: string | null;
   realResultUrl: string | null;
+  realResultExpandedPrompt: string | null;
+  realResultSeed: number | null;
   realError: string | null;
 }

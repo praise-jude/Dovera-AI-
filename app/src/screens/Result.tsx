@@ -22,8 +22,20 @@ const EXPORT_FORMATS: { id: "9:16" | "16:9" | "1:1"; label: string }[] = [
 ];
 
 export function Result() {
-  const { go, openSheet, realResultUrl, realProjectId, realJobType, exportInFormat, startEditProject } = useStore();
+  const {
+    go,
+    openSheet,
+    realResultUrl,
+    realProjectId,
+    realJobType,
+    realResultExpandedPrompt,
+    realResultSeed,
+    exportInFormat,
+    startEditProject,
+  } = useStore();
   const [playbackError, setPlaybackError] = useState<string | null>(null);
+  const [seedCopied, setSeedCopied] = useState(false);
+  const isAiVideo = realJobType === "TEXT_TO_VIDEO" || realJobType === "IMAGE_TO_VIDEO";
 
   return (
     <div className="screen result-screen vup">
@@ -99,6 +111,40 @@ export function Result() {
               <p className="disclaimer-note" style={{ margin: "6px 2px 0" }}>
                 Reopens these photos, music and style so you can change something — the original stays untouched.
               </p>
+            </>
+          )}
+          {isAiVideo && (realResultExpandedPrompt || realResultSeed != null) && (
+            <>
+              {realResultExpandedPrompt && (
+                <>
+                  <div className="section-label">What VIDORA actually generated from</div>
+                  <p className="disclaimer-note" style={{ margin: "0 2px 14px" }}>{realResultExpandedPrompt}</p>
+                </>
+              )}
+              {realResultSeed != null && (
+                <>
+                  <div className="section-label">Seed used</div>
+                  <div className="slideshow-photo-row" style={{ marginBottom: 14 }}>
+                    <div className="slideshow-photo-row-info" style={{ paddingLeft: 4 }}>
+                      <span className="mono">{realResultSeed}</span>
+                    </div>
+                    <button
+                      className="link-btn"
+                      onClick={() => {
+                        navigator.clipboard?.writeText(String(realResultSeed)).then(() => {
+                          setSeedCopied(true);
+                          setTimeout(() => setSeedCopied(false), 2000);
+                        });
+                      }}
+                    >
+                      {seedCopied ? "Copied ✓" : "Copy"}
+                    </button>
+                  </div>
+                  <p className="disclaimer-note" style={{ margin: "-6px 2px 14px" }}>
+                    Paste this into the Seed field next time for a consistent look across generations.
+                  </p>
+                </>
+              )}
             </>
           )}
         </>

@@ -27,6 +27,8 @@ const initialState: ViewState = {
   realPending: false,
   realStatusMessage: null,
   realResultUrl: null,
+  realResultExpandedPrompt: null,
+  realResultSeed: null,
   realError: null,
 };
 
@@ -62,8 +64,20 @@ interface Store extends ViewState {
   startTextToVideo: (opts: {
     projectName: string;
     prompt: string;
+    negativePrompt?: string;
     ratio: api.TextToVideoRatio;
     duration: api.TextToVideoDuration;
+    resolution?: api.AiVideoResolution;
+    seed?: number;
+  }) => Promise<void>;
+  startImageToVideo: (opts: {
+    projectName: string;
+    prompt: string;
+    negativePrompt?: string;
+    image: File;
+    duration: api.TextToVideoDuration;
+    resolution?: api.AiVideoResolution;
+    seed?: number;
   }) => Promise<void>;
   viewProjectResult: (projectId: string) => Promise<void>;
   exportInFormat: (aspectRatio: "9:16" | "16:9" | "1:1") => Promise<void>;
@@ -318,7 +332,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   );
 
   const startTextToVideo = useCallback(
-    async (opts: { projectName: string; prompt: string; ratio: api.TextToVideoRatio; duration: api.TextToVideoDuration }) => {
+    async (opts: {
+      projectName: string;
+      prompt: string;
+      negativePrompt?: string;
+      ratio: api.TextToVideoRatio;
+      duration: api.TextToVideoDuration;
+      resolution?: api.AiVideoResolution;
+      seed?: number;
+    }) => {
       setState((s) => ({
         ...s,
         prog: 0,
@@ -326,6 +348,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         realPending: true,
         realError: null,
         realResultUrl: null,
+        realResultExpandedPrompt: null,
+        realResultSeed: null,
         realStatusMessage: "Sending your prompt",
         prevScreen: s.screen,
         screen: "generating",
@@ -335,10 +359,63 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         const project = await api.createProject(opts.projectName || "Untitled prompt video");
         const { job } = await api.createTextToVideoJob(project.id, {
           prompt: opts.prompt,
+          negativePrompt: opts.negativePrompt,
           ratio: opts.ratio,
           duration: opts.duration,
+          resolution: opts.resolution,
+          seed: opts.seed,
         });
         setState((s) => ({ ...s, realProjectId: project.id, realJobId: job.id, realJobType: "TEXT_TO_VIDEO", realPending: false }));
+      } catch (err) {
+        setState((s) => ({
+          ...s,
+          realPending: false,
+          realError: err instanceof api.ApiError ? err.message : "Couldn't start generation. Please try again.",
+        }));
+      }
+    },
+    []
+  );
+
+  // Image-to-video: uploads the chosen photo first (so the worker has a
+  // real asset it can build an authenticated fetch URL for), then starts
+  // the job exactly like text-to-video from there.
+  const startImageToVideo = useCallback(
+    async (opts: {
+      projectName: string;
+      prompt: string;
+      negativePrompt?: string;
+      image: File;
+      duration: api.TextToVideoDuration;
+      resolution?: api.AiVideoResolution;
+      seed?: number;
+    }) => {
+      setState((s) => ({
+        ...s,
+        prog: 0,
+        realJobId: null,
+        realPending: true,
+        realError: null,
+        realResultUrl: null,
+        realResultExpandedPrompt: null,
+        realResultSeed: null,
+        realStatusMessage: "Uploading your photo",
+        prevScreen: s.screen,
+        screen: "generating",
+      }));
+      try {
+        await api.ensureAuth();
+        const project = await api.createProject(opts.projectName || "Untitled photo animation");
+        const imageAsset = await api.uploadAsset(opts.image, { projectId: project.id });
+        const { job } = await api.createImageToVideoJob(project.id, {
+          prompt: opts.prompt,
+          negativePrompt: opts.negativePrompt,
+          imageAssetId: imageAsset.id,
+          duration: opts.duration,
+          resolution: opts.resolution,
+          seed: opts.seed,
+        });
+        setState((s) => ({ ...s, realProjectId: project.id, realJobId: job.id, realJobType: "IMAGE_TO_VIDEO", realPending: false }));
       } catch (err) {
         setState((s) => ({
           ...s,
@@ -383,10 +460,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           const url = api.getAssetFileUrl(job.resultAssetId);
           if (cancelled) return;
           const me = await api.getMe().catch(() => null);
+          const aiParams = job.params as { expandedPrompt?: string; resultSeed?: number } | undefined;
           setState((s) => ({
             ...s,
             prog: 100,
             realResultUrl: url,
+            realResultExpandedPrompt: aiParams?.expandedPrompt ?? null,
+            realResultSeed: aiParams?.resultSeed ?? null,
             realJobType: job.type,
             credits: me ? me.credits.toLocaleString() : s.credits,
             screen: "result",
@@ -434,6 +514,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     openScene,
     startRealSlideshow,
     startTextToVideo,
+    startImageToVideo,
     viewProjectResult,
     exportInFormat,
     startEditProject,

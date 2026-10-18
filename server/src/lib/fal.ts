@@ -1,4 +1,4 @@
-// Real fal.ai text-to-video client (https://fal.ai, queue-based REST API,
+// Real fal.ai video generation client (https://fal.ai, queue-based REST API,
 // confirmed against their published docs — not guessed). Hosts Wan 2.5, an
 // open-source-derived model — cheaper per-second than Runway, and fal gives
 // new accounts a small one-time free credit, so this is the "free to try"
@@ -9,7 +9,8 @@
 // Runway, this is an optional capability the server must still boot without.
 
 const BASE_URL = "https://queue.fal.run";
-const MODEL_ID = "fal-ai/wan-25-preview/text-to-video";
+const TEXT_TO_VIDEO_MODEL = "fal-ai/wan-25-preview/text-to-video";
+const IMAGE_TO_VIDEO_MODEL = "fal-ai/wan-25-preview/image-to-video";
 
 export function isFalConfigured(): boolean {
   return Boolean(process.env.FAL_KEY);
@@ -46,6 +47,7 @@ async function falFetch<T>(url: string, opts: RequestInit = {}): Promise<T> {
 
 export type FalAspectRatio = "16:9" | "9:16" | "1:1";
 export type FalDuration = 5 | 10;
+export type FalResolution = "480p" | "720p" | "1080p";
 
 export interface FalTaskHandle {
   requestId: string;
@@ -53,20 +55,55 @@ export interface FalTaskHandle {
   responseUrl: string;
 }
 
-export async function createTextToVideoTask(opts: {
+// $-per-second varies by resolution (480p $0.05, 720p $0.10, 1080p $0.15) —
+// this app's credit rate (5 credits/real-second at 480p) scales 1:1 with it,
+// see CREDITS_PER_T2V_SECOND in routes/jobs.ts.
+export function falCreditMultiplierFor(resolution: FalResolution): number {
+  return resolution === "1080p" ? 3 : resolution === "720p" ? 2 : 1;
+}
+
+interface FalCommonOpts {
   prompt: string;
-  aspectRatio: FalAspectRatio;
+  negativePrompt?: string;
+  resolution: FalResolution;
   duration: FalDuration;
-}): Promise<FalTaskHandle> {
+  seed?: number;
+}
+
+export async function createTextToVideoTask(
+  opts: FalCommonOpts & { aspectRatio: FalAspectRatio }
+): Promise<FalTaskHandle> {
   const body = await falFetch<{ request_id: string; status_url: string; response_url: string }>(
-    `${BASE_URL}/${MODEL_ID}`,
+    `${BASE_URL}/${TEXT_TO_VIDEO_MODEL}`,
     {
       method: "POST",
       body: JSON.stringify({
         prompt: opts.prompt,
+        negative_prompt: opts.negativePrompt || undefined,
         aspect_ratio: opts.aspectRatio,
         duration: String(opts.duration),
-        resolution: "480p", // cheapest tier ($0.05/real-second) — matches this app's credit rate 1:1
+        resolution: opts.resolution,
+        seed: opts.seed,
+      }),
+    }
+  );
+  return { requestId: body.request_id, statusUrl: body.status_url, responseUrl: body.response_url };
+}
+
+export async function createImageToVideoTask(
+  opts: FalCommonOpts & { imageUrl: string }
+): Promise<FalTaskHandle> {
+  const body = await falFetch<{ request_id: string; status_url: string; response_url: string }>(
+    `${BASE_URL}/${IMAGE_TO_VIDEO_MODEL}`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        prompt: opts.prompt,
+        negative_prompt: opts.negativePrompt || undefined,
+        image_url: opts.imageUrl,
+        duration: String(opts.duration),
+        resolution: opts.resolution,
+        seed: opts.seed,
       }),
     }
   );
@@ -88,6 +125,9 @@ export async function getTaskStatus(statusUrl: string): Promise<FalStatusRespons
 export interface FalResult {
   video: { url: string; content_type?: string; width?: number; height?: number; duration?: number };
   seed?: number;
+  // The rewritten prompt fal actually generated from, when
+  // enable_prompt_expansion (default true) rewrote the user's input.
+  actual_prompt?: string;
 }
 
 export async function getTaskResult(responseUrl: string): Promise<FalResult> {

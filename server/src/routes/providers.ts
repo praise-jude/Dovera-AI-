@@ -16,6 +16,20 @@ const REGISTRY = [
     description: "Ken Burns slideshow assembly — runs locally, no external cost, always available.",
   },
   {
+    capability: "IMAGE_TO_VIDEO",
+    name: "fal",
+    configured: Boolean(process.env.FAL_KEY),
+    kind: "ai-generative",
+    description: "Real AI animation of one of your own photos via fal.ai (Wan 2.5) — actual motion generated around your real image, not a Ken Burns pan. Requires FAL_KEY.",
+  },
+  {
+    capability: "IMAGE_TO_VIDEO",
+    name: "runway",
+    configured: Boolean(process.env.RUNWAY_API_KEY),
+    kind: "ai-generative",
+    description: "Real AI animation of one of your own photos via Runway. Requires RUNWAY_API_KEY.",
+  },
+  {
     capability: "TEXT_TO_VIDEO",
     name: "runway",
     configured: Boolean(process.env.RUNWAY_API_KEY),

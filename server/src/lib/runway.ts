@@ -65,6 +65,29 @@ export async function createTextToVideoTask(opts: {
   });
 }
 
+// Unverified live (no RUNWAY_API_KEY configured to test against as of
+// writing) — built from Runway's documented /v1/image_to_video shape
+// (promptImage/promptText/ratio/duration, same auth as text-to-video).
+// fal.ai is this app's actually-funded, actually-tested provider; this is
+// kept at parity so Runway works too the moment it's ever funded.
+export async function createImageToVideoTask(opts: {
+  promptText: string;
+  promptImage: string;
+  ratio: RunwayRatio;
+  duration: RunwayDuration;
+}): Promise<RunwayTaskCreated> {
+  return runwayFetch<RunwayTaskCreated>("/v1/image_to_video", {
+    method: "POST",
+    body: JSON.stringify({
+      model: "gen4_turbo",
+      promptImage: opts.promptImage,
+      promptText: opts.promptText,
+      ratio: opts.ratio,
+      duration: opts.duration,
+    }),
+  });
+}
+
 export type RunwayTaskStatus = "PENDING" | "THROTTLED" | "RUNNING" | "SUCCEEDED" | "FAILED";
 
 export interface RunwayTask {

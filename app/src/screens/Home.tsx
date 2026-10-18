@@ -83,7 +83,7 @@ export function Home() {
         <button className="real-cta" onClick={() => go("text-to-video")}>
           <div className="real-badge"><span className="real-badge-dot" /> Real AI generation</div>
           <div className="real-cta-title">Prompt → Video</div>
-          <div className="real-cta-meta">Type a description — no photos needed. Needs a Runway key to be configured.</div>
+          <div className="real-cta-meta">Generate from a prompt, or animate one of your own photos with AI.</div>
         </button>
         <button className="real-cta" onClick={() => go("music-library")}>
           <div className="real-badge"><span className="real-badge-dot" /> Real storage</div>
